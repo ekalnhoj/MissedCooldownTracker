@@ -58,14 +58,37 @@ local tableTextStr = ""
 local track_threshold = 30
 
 
-local m = {} -- Table to store filtered spells
-local blacklist = {} -- Table to store spells to ignore (e.g. Revive Battle Pets)
+-- local sl = {} -- Table to store filtered spells
+-- local bl = {} -- Table to store spells to ignore (e.g. Revive Battle Pets)
 
 local initialized = 0
 
 -- Logic to load the saved table.
 local frame = CreateFrame("Frame")
 frame:RegisterEvent("ADDON_LOADED")
+
+
+
+function save_spelllist()
+    -- Save the bs table to the SavedVariables file
+    local addonName = "CooldownTracker"
+    local savedVariables = _G[addonName.."DB"] or {[UnitClass("player")]={}}
+    savedVariables[UnitClass("player")].saved_spells = monitoredSpells
+    _G[addonName.."DB"] = savedVariables
+end
+
+function save_blacklist()
+    -- Save the bs table to the SavedVariables file
+    local addonName = "CooldownTracker"
+    local savedVariables = _G[addonName.."DB"] or {}
+    savedVariables.nixed_spells = blacklist
+    _G[addonName.."DB"] = savedVariables
+end
+
+function save_to_file()
+    save_spelllist()
+    save_blacklist()
+end
 
 
 local function CreateOptionsPanel()
@@ -115,7 +138,7 @@ local function CreateOptionsPanel()
     blacklistEditBox:SetPoint("TOPLEFT", blacklistDesc, "BOTTOMLEFT", 0, -16)
     blacklistEditBox:SetAutoFocus(false)
     blacklistEditBox:SetMultiLine(false)
-    blacklistEditBox:SetText(table.concat(CooldownTrackerDB.blacklist, "\n"))
+    blacklistEditBox:SetText(table.concat(CooldownTrackerDB.nixed_spells, "\n"))
 
     -- create okay button
     local okayButton = CreateFrame("Button", nil, panel, "UIPanelButtonTemplate")
@@ -123,9 +146,9 @@ local function CreateOptionsPanel()
     okayButton:SetSize(80, 22)
     okayButton:SetText("Okay")
     okayButton:SetScript("OnClick", function()
-        CooldownTrackerDB.blacklist = {}
+        CooldownTrackerDB.nixed_spells = {}
         -- for line in blacklistEditBox:GetText():gmatch("[^\r\n]+") do
-        --     tinsert(CooldownTrackerDB.blacklist, line)
+        --     tinsert(CooldownTrackerDB.nixed_spells, line)
         -- end
         add_to_blacklist(blacklistEditBox:GetText())
         print("Blacklist updated!")
@@ -148,8 +171,6 @@ local function addon_loaded(context, event, addon_name)
 end
 
 frame:SetScript("OnEvent", addon_loaded)
-
-
 
 
 
@@ -198,13 +219,13 @@ function load_table(table_name)
         if CooldownTrackerDB == nil then
             CooldownTrackerDB = {}
         end
-        if CooldownTrackerDB.blacklist == nil then 
-            CooldownTrackerDB.blacklist = {}
+        if CooldownTrackerDB.nixed_spells == nil then 
+            CooldownTrackerDB.nixed_spells = {}
         end
 
         -- Load the monitoredSpells table from the saved variable table
-        if CooldownTrackerDB and CooldownTrackerDB.blacklist then
-            blacklist = CooldownTrackerDB.blacklist
+        if CooldownTrackerDB and CooldownTrackerDB.nixed_spells then
+            blacklist = CooldownTrackerDB.nixed_spells
         end
     end
     print("Loaded table ",table_name)
@@ -289,7 +310,7 @@ local function get_all_spells_with_cd_over_threshold()
         end
     end
 
-    CooldownTrackerDB[UnitClass("player")].saved_spells = monitoredSpells
+    save_to_file()
 end
 
 function blacklist_cleanse()
@@ -303,6 +324,8 @@ function blacklist_cleanse()
     end
     print("After: ")
     printTable(monitoredSpells)
+
+    save_to_file()
 end
 
 function add_to_blacklist(name_to_blacklist)

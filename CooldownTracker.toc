@@ -1,0 +1,7 @@
+## Interface: 100007
+## Title: CooldownTracker
+## Author: John Lake
+## Version: 1.0
+## SavedVariables: CooldownTrackerDB
+
+CooldownTracker.lua
