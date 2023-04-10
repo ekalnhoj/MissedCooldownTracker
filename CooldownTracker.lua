@@ -1,13 +1,3 @@
--- local start, duration, enabled, modRate = GetSpellCooldown(205385)
--- if enabled == 0 then
---  print("Presence of Mind is currently active, use it and wait " .. duration .. " seconds for the next one.")
--- elseif ( start > 0 and duration > 0) then
---  local cdLeft = start + duration - GetTime()
---  print("Presence of Mind is cooling down, wait " .. cdLeft .. " seconds for the next one.")
--- else
---  print("Presence of Mind is ready.")
--- end
-
 -- Create a new frame named 'CooldownTrackerFrame' with a size of 300x400
 local cooldownFrame = CreateFrame("Frame", "CooldownTrackerFrame", UIParent, "BackdropTemplate")
 cooldownFrame:SetSize(300, 400)
@@ -67,9 +57,102 @@ local lastUseTime_default = 0
 local tableTextStr = ""
 local track_threshold = 30
 
-local filteredSpells = {} -- Table to store filtered spells
 
-print(allSpells)
+local filteredSpells = {} -- Table to store filtered spells
+--local blacklist = {} -- Table to store spells to ignore (e.g. Revive Battle Pets)
+
+
+-- Logic to load the saved table.
+local frame = CreateFrame("Frame")
+frame:RegisterEvent("ADDON_LOADED")
+
+local function addon_loaded(context, event, addon_name)
+    print("Loading Addon: ",addon_name)
+    print("Arguments: \nevent: ",event,"\naddon_name: ",addon_name,"\ncontext: ",context)
+    printTable(filteredSpells)
+    if addon_name == "CooldownTracker" then
+        print("Loading from file")
+        -- Initialize the filteredSpells table if it doesn't exist
+        if not filteredSpells then
+            print("not filteredSpells")
+            filteredSpells = {}
+        end
+
+        -- Load the filteredSpells table from the saved variable table
+        if CooldownTrackerDB and CooldownTrackerDB[UnitClass("player")] then
+            print("CooldownTrackerDB and CooldownTrackerDB[<stuff>]")
+            filteredSpells = CooldownTrackerDB[UnitClass("player")].filteredSpells
+            filteredSpells_loaded = CooldownTrackerDB[UnitClass("player")].filteredSpells
+            print("filteredSpells: ")
+            printTable(filteredSpells)
+        end
+
+        -- Unregister the ADDON_LOADED event
+        frame:UnregisterEvent("ADDON_LOADED")
+    end
+    print("End of addon_loaded()")
+end
+
+frame:SetScript("OnEvent", addon_loaded)
+
+
+
+-- ========================================================================
+function load_table(table_name)
+    if table_name == "filteredSpells" then
+        -- Initialize the filteredSpells table if it doesn't exist
+        if not filteredSpells then
+            filteredSpells = {}
+        end
+
+        -- Load the filteredSpells table from the saved variable table
+        if CooldownTrackerDB and CooldownTrackerDB[UnitClass("player")] then
+            print("CooldownTrackerDB and CooldownTrackerDB[<stuff>]")
+            filteredSpells = CooldownTrackerDB[UnitClass("player")].filteredSpells
+            print("Loaded table filteredSpells: ")
+            printTable(filteredSpells)
+        end
+    end
+end
+
+function printTable(t, indent)
+    indent = indent or 0
+    for k,v in pairs(t) do
+        if type(v) == "table" then
+            print(string.rep("  ", indent) .. k .. ":")
+            printTable(v, indent + 1)
+        else
+            print(string.rep("  ", indent) .. k .. ": " .. tostring(v))
+        end
+    end
+end
+
+-- Slash command function
+local function slashCommandHandler(msg)
+    if msg == "print" then
+        print("filteredSpells: ")
+        printTable(filteredSpells)
+    end
+    if msg == "print_saved_table" then
+        print("CooldownTrackerDB: ")
+        printTable(CooldownTrackerDB)
+    end
+    if msg == "load" then
+        print("Before (filteredSpells): ")
+        printTable(filteredSpells)
+        load_table("filteredSpells")
+        print("After:  ")
+        print("After (filteredSpells): ")
+        printTable(filteredSpells)
+    end
+end
+
+-- Register the slash command
+SLASH_CDT1 = "/cdt"
+SlashCmdList["CDT"] = slashCommandHandler
+
+
+-- =========================================================================
 
 -- Runs on startup only. Iterates over all spells, adding only spells with a 
 --   cd greater than <threshold> seconds to the table.
@@ -100,6 +183,7 @@ local function get_all_spells_with_cd_over_threshold()
             end
         end
     end
+
 end
 
 -- Function to update the display text of 'spNameText'
@@ -130,12 +214,10 @@ local function updateTableText()
         mcText:SetText(mc_prev .. string.format("%d",mc) .. "\n")
     end
 end
-print("Updating Table Text (initial)")
-updateTableText()
 
 -- Function to update spell cooldowns
 local function updateCooldowns()
-    print("Tock: updateCooldowns")
+    -- print("Tock: updateCooldowns")
     if not filteredSpells then return end
 
     for _, spellData in pairs(filteredSpells) do        
