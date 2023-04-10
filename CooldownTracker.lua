@@ -58,92 +58,189 @@ local tableTextStr = ""
 local track_threshold = 30
 
 
-local filteredSpells = {} -- Table to store filtered spells
---local blacklist = {} -- Table to store spells to ignore (e.g. Revive Battle Pets)
+local m = {} -- Table to store filtered spells
+local blacklist = {} -- Table to store spells to ignore (e.g. Revive Battle Pets)
 
+local initialized = 0
 
 -- Logic to load the saved table.
 local frame = CreateFrame("Frame")
 frame:RegisterEvent("ADDON_LOADED")
 
-local function addon_loaded(context, event, addon_name)
-    print("Loading Addon: ",addon_name)
-    print("Arguments: \nevent: ",event,"\naddon_name: ",addon_name,"\ncontext: ",context)
-    printTable(filteredSpells)
-    if addon_name == "CooldownTracker" then
-        print("Loading from file")
-        -- Initialize the filteredSpells table if it doesn't exist
-        if not filteredSpells then
-            print("not filteredSpells")
-            filteredSpells = {}
-        end
 
-        -- Load the filteredSpells table from the saved variable table
-        if CooldownTrackerDB and CooldownTrackerDB[UnitClass("player")] then
-            print("CooldownTrackerDB and CooldownTrackerDB[<stuff>]")
-            filteredSpells = CooldownTrackerDB[UnitClass("player")].filteredSpells
-            filteredSpells_loaded = CooldownTrackerDB[UnitClass("player")].filteredSpells
-            print("filteredSpells: ")
-            printTable(filteredSpells)
-        end
+local function CreateOptionsPanel()
+    -- create configuration panel
+    local panel = CreateFrame("Frame", "CooldownTrackerOptionsPanel", InterfaceOptionsFramePanelContainer)
+    panel.name = "Cooldown Tracker"
+
+    -- create title
+    local title = panel:CreateFontString(nil, "ARTWORK", "GameFontNormalLarge")
+    title:SetPoint("TOPLEFT", 16, -16)
+    title:SetText("Cooldown Tracker Options")
+
+    -- create description
+    local desc = panel:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
+    desc:SetPoint("TOPLEFT", title, "BOTTOMLEFT", 0, -8)
+    desc:SetPoint("RIGHT", panel, -32, 0)
+    desc:SetJustifyH("LEFT")
+    desc:SetJustifyV("TOP")
+    desc:SetText("Configure options for the Cooldown Tracker addon.")
+
+    -- create scroll frame
+    local scroll = CreateFrame("ScrollFrame", "CooldownTrackerOptionsPanelScrollFrame", panel, "UIPanelScrollFrameTemplate")
+    scroll:SetPoint("TOPLEFT", desc, "BOTTOMLEFT", 0, -16)
+    scroll:SetPoint("BOTTOMRIGHT", panel, -32, 16)
+
+    -- create scroll child frame
+    local child = CreateFrame("Frame", nil, scroll)
+    child:SetSize(300, 400)
+    scroll:SetScrollChild(child)
+
+    -- create title for blacklist
+    local blacklistTitle = child:CreateFontString(nil, "ARTWORK", "GameFontNormalLarge")
+    blacklistTitle:SetPoint("TOPLEFT", 16, -16)
+    blacklistTitle:SetText("Blacklisted Cooldowns")
+
+    -- create description for blacklist
+    local blacklistDesc = child:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
+    blacklistDesc:SetPoint("TOPLEFT", blacklistTitle, "BOTTOMLEFT", 0, -8)
+    blacklistDesc:SetPoint("RIGHT", child, -32, 0)
+    blacklistDesc:SetJustifyH("LEFT")
+    blacklistDesc:SetJustifyV("TOP")
+    blacklistDesc:SetText("Add or remove cooldowns from the blacklist (by name, not spell ID).")
+
+    -- create editbox for blacklist
+    local blacklistEditBox = CreateFrame("EditBox", "CooldownTrackerOptionsPanelBlacklistEditBox", child, "InputBoxTemplate")
+    blacklistEditBox:SetSize(200, 20)
+    blacklistEditBox:SetPoint("TOPLEFT", blacklistDesc, "BOTTOMLEFT", 0, -16)
+    blacklistEditBox:SetAutoFocus(false)
+    blacklistEditBox:SetMultiLine(false)
+    blacklistEditBox:SetText(table.concat(CooldownTrackerDB.blacklist, "\n"))
+
+    -- create okay button
+    local okayButton = CreateFrame("Button", nil, panel, "UIPanelButtonTemplate")
+    okayButton:SetPoint("BOTTOMRIGHT", -16, 16)
+    okayButton:SetSize(80, 22)
+    okayButton:SetText("Okay")
+    okayButton:SetScript("OnClick", function()
+        CooldownTrackerDB.blacklist = {}
+        -- for line in blacklistEditBox:GetText():gmatch("[^\r\n]+") do
+        --     tinsert(CooldownTrackerDB.blacklist, line)
+        -- end
+        add_to_blacklist(blacklistEditBox:GetText())
+        print("Blacklist updated!")
+    end)
+
+    -- add configuration panel to WoW Interface Options
+    InterfaceOptions_AddCategory(panel)
+end
+
+local function addon_loaded(context, event, addon_name)
+    if addon_name == "CooldownTracker" then
+        load_table("monitoredSpells")
+        load_table("blacklist")
+
+        CreateOptionsPanel()
 
         -- Unregister the ADDON_LOADED event
         frame:UnregisterEvent("ADDON_LOADED")
     end
-    print("End of addon_loaded()")
 end
 
 frame:SetScript("OnEvent", addon_loaded)
 
 
 
+
+
+-- ========================================================================
+
+
+
+
+
 -- ========================================================================
 function load_table(table_name)
-    if table_name == "filteredSpells" then
-        -- Initialize the filteredSpells table if it doesn't exist
-        if not filteredSpells then
-            filteredSpells = {}
+    if table_name == "monitoredSpells" then
+        -- Initialize if needed.
+        if not monitoredSpells then
+            monitoredSpells = {}
         end
 
-        -- Load the filteredSpells table from the saved variable table
+        -- Initialize the table and subtable if they don't exist.
+        if CooldownTrackerDB == nil then
+            CooldownTrackerDB = {}
+        end
+        if CooldownTrackerDB[UnitClass("player")] == nil then
+            CooldownTrackerDB[UnitClass("player")] = {}
+        end
+
+        if CooldownTrackerDB[UnitClass("player")].saved_spells == nil then
+            CooldownTrackerDB[UnitClass("player")].saved_spells = {}
+        end
+
+        -- Load the monitoredSpells table from the saved variable table
         if CooldownTrackerDB and CooldownTrackerDB[UnitClass("player")] then
-            print("CooldownTrackerDB and CooldownTrackerDB[<stuff>]")
-            filteredSpells = CooldownTrackerDB[UnitClass("player")].filteredSpells
-            print("Loaded table filteredSpells: ")
-            printTable(filteredSpells)
+            -- This seems to act like a pointer? I don't get it to be honest.
+            monitoredSpells = CooldownTrackerDB[UnitClass("player")].saved_spells
+            if monitoredSpells == nil then 
+                monitoredSpells = {}
+            end
+        end
+        initialized = 1
+    elseif table_name == "blacklist" then
+        -- Initialize if needed.
+        if not blacklist then
+            blacklist = {}
+        end
+
+        -- Initialize table and subtable if they don't exist.
+        if CooldownTrackerDB == nil then
+            CooldownTrackerDB = {}
+        end
+        if CooldownTrackerDB.blacklist == nil then 
+            CooldownTrackerDB.blacklist = {}
+        end
+
+        -- Load the monitoredSpells table from the saved variable table
+        if CooldownTrackerDB and CooldownTrackerDB.blacklist then
+            blacklist = CooldownTrackerDB.blacklist
         end
     end
+    print("Loaded table ",table_name)
 end
 
 function printTable(t, indent)
     indent = indent or 0
-    for k,v in pairs(t) do
-        if type(v) == "table" then
-            print(string.rep("  ", indent) .. k .. ":")
-            printTable(v, indent + 1)
-        else
-            print(string.rep("  ", indent) .. k .. ": " .. tostring(v))
+    if t ~= nil then
+        for k,v in pairs(t) do
+            if type(v) == "table" then
+                print(string.rep("  ", indent) .. k .. ":")
+                printTable(v, indent + 1)
+            else
+                print(string.rep("  ", indent) .. k .. ": " .. tostring(v))
+            end
         end
+    else
+        print("nil")
     end
 end
 
 -- Slash command function
 local function slashCommandHandler(msg)
     if msg == "print" then
-        print("filteredSpells: ")
-        printTable(filteredSpells)
+        print("monitoredSpells: ")
+        printTable(monitoredSpells)
     end
     if msg == "print_saved_table" then
         print("CooldownTrackerDB: ")
         printTable(CooldownTrackerDB)
     end
     if msg == "load" then
-        print("Before (filteredSpells): ")
-        printTable(filteredSpells)
-        load_table("filteredSpells")
-        print("After:  ")
-        print("After (filteredSpells): ")
-        printTable(filteredSpells)
+        load_table("monitoredSpells")
+    end
+    if msg == "load blacklist" then
+        load_table("blacklist")
     end
 end
 
@@ -169,14 +266,22 @@ local function get_all_spells_with_cd_over_threshold()
             -- local spellName, _, spellIcon = GetSpellInfo(spellID)
             local spellName, _, spellIcon, _, _, _, spellID = GetSpellInfo(spellName)
 
+            local is_in_blacklist = 0
+            for k,v in pairs(blacklist) do
+                if spellID == k then is_in_blacklist = 1 end
+            end
+
             if not spellID then 
                 -- print("Not Spell ID: ",spellID)
                 -- If spellID isn't valid then do nothing, else keep running.
+            elseif is_in_blacklist == 1 then
+                -- print("Blacklisted spell.")
+                -- If it's in the blacklist, don't add it to the table.
             else
                 local start, duration, enabled = GetSpellCooldown(spellID)
                 if duration and duration >= track_threshold then
                     -- print("Yes: ",spellName)
-                    filteredSpells[spellID] = {spellID=spellID, spellName=spellName, cooldown=duration, lastused=-1}
+                    monitoredSpells[spellID] = {spellID=spellID, spellName=spellName, cooldown=duration, lastused=-1}
                 else
                     -- print("No:  ",spellName)
                 end
@@ -184,12 +289,46 @@ local function get_all_spells_with_cd_over_threshold()
         end
     end
 
+    CooldownTrackerDB[UnitClass("player")].saved_spells = monitoredSpells
+end
+
+function blacklist_cleanse()
+    print("Before: ")
+    printTable(monitoredSpells)
+    for k,v in pairs(monitoredSpells) do
+        if blacklist[k] ~= nil then
+            print("Removing from monitored spells: ",k,": ",monitoredSpells[k].spellName)
+            monitoredSpells[k] = nil
+        end
+    end
+    print("After: ")
+    printTable(monitoredSpells)
+end
+
+function add_to_blacklist(name_to_blacklist)
+    print("Adding ",name_to_blacklist," to blacklist.")
+    for i = 1,GetNumSpellTabs() do
+        local _, _, offset, numSpells = GetSpellTabInfo(i)
+        
+        for j = 1, numSpells do
+            local spellName = GetSpellBookItemName(j + offset, BOOKTYPE_SPELL)
+            local spellName, _, spellIcon, _, _, _, spellID = GetSpellInfo(spellName)
+
+            if spellName == name_to_blacklist then
+                blacklist[spellID] = spellName
+            end
+        end
+    end
+    print("New blacklist: ")
+    printTable(blacklist)
+    print("Cleansing with new blacklist.")
+    blacklist_cleanse()
 end
 
 -- Function to update the display text of 'spNameText'
 local function updateTableText()
     -- print("Tock: updateTableText")
-    if not filteredSpells then return end
+    if not monitoredSpells then return end
 
     -- Clear the current text
     spNameText:SetText("Spell Name\n")
@@ -198,7 +337,7 @@ local function updateTableText()
     mcText:SetText("MC\n")
 
     -- Iterate over the filtered spells and add them to the text
-    for _, spellData in pairs(filteredSpells) do
+    for _, spellData in pairs(monitoredSpells) do
         -- Add the formatted line to the previous lines.
         local sp_prev = spNameText:GetText()
         local cd_prev = spcdText:GetText()
@@ -216,23 +355,24 @@ local function updateTableText()
 end
 
 -- Function to update spell cooldowns
-local function updateCooldowns()
+function updateCooldowns()
     -- print("Tock: updateCooldowns")
-    if not filteredSpells then return end
+    if not monitoredSpells then return end
 
-    for _, spellData in pairs(filteredSpells) do        
+    for _, spellData in pairs(monitoredSpells) do        
         local spellName, _, spellIcon, spellCooldown = GetSpellInfo(spellData.spellID)
         local start, duration, enabled = GetSpellCooldown(spellData.spellID)
 
         -- If the spell is on cooldown and its cooldown is longer than 30 seconds
         if start ~= nil and duration > 1.5 and duration >= track_threshold then
-            -- Store the spell data in the filteredSpells table
-            filteredSpells[spellData.spellID].lastused = start -- GetTime() - start
+            -- Store the spell data in the monitoredSpells table
+            monitoredSpells[spellData.spellID].lastused = start -- GetTime() - start
         end
     end
 end
 
--- Define the function to call 'updateCooldownText' once per second
+
+
 local function onTick()
     -- print("Tick: ",GetTime())
     get_all_spells_with_cd_over_threshold()
@@ -241,8 +381,16 @@ local function onTick()
     C_Timer.After(0.5, onTick)
 end
 
+local function onTick_init()
+    if initialized == 0 then
+        C_Timer.After(1,onTick_init)
+    else
+        C_Timer.After(0.5,onTick)
+    end
+end
+
 -- Call 'onTick' once to start the timer
-onTick()
+onTick_init()
 
 
 -- Event handler for PLAYER_LOGIN event
