@@ -1,3 +1,11 @@
+-- Next steps: 
+--   Options UI displays blacklisted spells.
+--   Options UI blacklist by Spell ID.
+--   Options UI whitelist spells.
+--   Main frame reset button.
+--   Way to make Missed Uses text red only for a particular row.
+
+
 -- Create a new frame named 'CooldownTrackerFrame' with a size of 300x400
 local cooldownFrame = CreateFrame("Frame", "CooldownTrackerFrame", UIParent, "BackdropTemplate")
 cooldownFrame:SetSize(300, 400)
@@ -14,6 +22,26 @@ cooldownFrame:SetBackdrop({
 cooldownFrame:SetBackdropColor(0, 0, 0, 1)
 -- Show the frame initially
 cooldownFrame:Show()
+
+-- Add a reset button to the bottom.
+if true then
+    -- Create a new frame for the button
+    local resetButtonFrame = CreateFrame("Frame", "resetButtonFrame", cooldownFrame)
+    resetButtonFrame:SetSize(100, 30)
+    resetButtonFrame:SetPoint("BOTTOM", cooldownFrame, "BOTTOM", 0, 10)
+
+    -- Create the button and add it to the frame
+    local resetButton = CreateFrame("Button", "resetButton", resetButtonFrame, "UIPanelButtonTemplate")
+    resetButton:SetPoint("CENTER", resetButtonFrame, "CENTER", 0, 0)
+    resetButton:SetSize(80, 22)
+    resetButton:SetText("Reset Spell Numbers")
+
+    -- Set the click handler for the button
+    resetButton:SetScript("OnClick", function()
+        reset_spell_numbers()
+    end)
+end
+
 
 -- Create a new font string named 'spNameText' inside 'cooldownFrame'
 local spNameText = cooldownFrame:CreateFontString(nil, "OVERLAY", "GameFontNormal") -- spell name 
@@ -56,6 +84,7 @@ spNameText:SetText("") -- Could probably just do it in the constructor, but why 
 local lastUseTime_default = 0
 local tableTextStr = ""
 local track_threshold = 30
+local learning_mode = true
 
 
 -- local sl = {} -- Table to store filtered spells
@@ -85,85 +114,37 @@ function save_blacklist()
     _G[addonName.."DB"] = savedVariables
 end
 
+function save_options()
+    -- Save the bs table to the SavedVariables file
+    local addonName = "CooldownTracker"
+    local savedVariables = _G[addonName.."DB"] or {}
+    savedVariables.cdt_options = cdt_opts
+    _G[addonName.."DB"] = savedVariables
+end
+
 function save_to_file()
     save_spelllist()
     save_blacklist()
+    save_options()
 end
 
+    
+--LoadAddon("Options/Options.lua")
+-- if IsAddOnLoaded("CooldownTracker_Options") then
+--     include("Options/Options.lua")
+-- else
+--     print("Not IsAddOnLoaded")
+-- end
 
-local function CreateOptionsPanel()
-    -- create configuration panel
-    local panel = CreateFrame("Frame", "CooldownTrackerOptionsPanel", InterfaceOptionsFramePanelContainer)
-    panel.name = "Cooldown Tracker"
 
-    -- create title
-    local title = panel:CreateFontString(nil, "ARTWORK", "GameFontNormalLarge")
-    title:SetPoint("TOPLEFT", 16, -16)
-    title:SetText("Cooldown Tracker Options")
-
-    -- create description
-    local desc = panel:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
-    desc:SetPoint("TOPLEFT", title, "BOTTOMLEFT", 0, -8)
-    desc:SetPoint("RIGHT", panel, -32, 0)
-    desc:SetJustifyH("LEFT")
-    desc:SetJustifyV("TOP")
-    desc:SetText("Configure options for the Cooldown Tracker addon.")
-
-    -- create scroll frame
-    local scroll = CreateFrame("ScrollFrame", "CooldownTrackerOptionsPanelScrollFrame", panel, "UIPanelScrollFrameTemplate")
-    scroll:SetPoint("TOPLEFT", desc, "BOTTOMLEFT", 0, -16)
-    scroll:SetPoint("BOTTOMRIGHT", panel, -32, 16)
-
-    -- create scroll child frame
-    local child = CreateFrame("Frame", nil, scroll)
-    child:SetSize(300, 400)
-    scroll:SetScrollChild(child)
-
-    -- create title for blacklist
-    local blacklistTitle = child:CreateFontString(nil, "ARTWORK", "GameFontNormalLarge")
-    blacklistTitle:SetPoint("TOPLEFT", 16, -16)
-    blacklistTitle:SetText("Blacklisted Cooldowns")
-
-    -- create description for blacklist
-    local blacklistDesc = child:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
-    blacklistDesc:SetPoint("TOPLEFT", blacklistTitle, "BOTTOMLEFT", 0, -8)
-    blacklistDesc:SetPoint("RIGHT", child, -32, 0)
-    blacklistDesc:SetJustifyH("LEFT")
-    blacklistDesc:SetJustifyV("TOP")
-    blacklistDesc:SetText("Add or remove cooldowns from the blacklist (by name, not spell ID).")
-
-    -- create editbox for blacklist
-    local blacklistEditBox = CreateFrame("EditBox", "CooldownTrackerOptionsPanelBlacklistEditBox", child, "InputBoxTemplate")
-    blacklistEditBox:SetSize(200, 20)
-    blacklistEditBox:SetPoint("TOPLEFT", blacklistDesc, "BOTTOMLEFT", 0, -16)
-    blacklistEditBox:SetAutoFocus(false)
-    blacklistEditBox:SetMultiLine(false)
-    blacklistEditBox:SetText(table.concat(CooldownTrackerDB.nixed_spells, "\n"))
-
-    -- create okay button
-    local okayButton = CreateFrame("Button", nil, panel, "UIPanelButtonTemplate")
-    okayButton:SetPoint("BOTTOMRIGHT", -16, 16)
-    okayButton:SetSize(80, 22)
-    okayButton:SetText("Okay")
-    okayButton:SetScript("OnClick", function()
-        CooldownTrackerDB.nixed_spells = {}
-        -- for line in blacklistEditBox:GetText():gmatch("[^\r\n]+") do
-        --     tinsert(CooldownTrackerDB.nixed_spells, line)
-        -- end
-        add_to_blacklist(blacklistEditBox:GetText())
-        print("Blacklist updated!")
-    end)
-
-    -- add configuration panel to WoW Interface Options
-    InterfaceOptions_AddCategory(panel)
-end
 
 local function addon_loaded(context, event, addon_name)
     if addon_name == "CooldownTracker" then
         load_table("monitoredSpells")
         load_table("blacklist")
+        load_table("cdt_options")
 
-        CreateOptionsPanel()
+        -- CreateOptionsPanel()
 
         -- Unregister the ADDON_LOADED event
         frame:UnregisterEvent("ADDON_LOADED")
@@ -227,6 +208,24 @@ function load_table(table_name)
         if CooldownTrackerDB and CooldownTrackerDB.nixed_spells then
             blacklist = CooldownTrackerDB.nixed_spells
         end
+    elseif table_name == "cdt_options" then
+        -- Initialize if needed.
+        if not cdt_opts then
+            cdt_opts = {sort_method="cooldown"}
+        end
+
+        -- Initialize table and subtable if they don't exist.
+        if CooldownTrackerDB == nil then
+            CooldownTrackerDB = {}
+        end
+        if CooldownTrackerDB.cdt_options == nil then 
+            CooldownTrackerDB.cdt_options = {}
+        end
+
+        -- Load the monitoredSpells table from the saved variable table
+        if CooldownTrackerDB and CooldownTrackerDB.cdt_options then
+            cdt_opts = CooldownTrackerDB.cdt_options
+        end
     end
     print("Loaded table ",table_name)
 end
@@ -252,16 +251,29 @@ local function slashCommandHandler(msg)
     if msg == "print" then
         print("monitoredSpells: ")
         printTable(monitoredSpells)
-    end
-    if msg == "print_saved_table" then
+    elseif msg == "print_saved_table" then
         print("CooldownTrackerDB: ")
         printTable(CooldownTrackerDB)
-    end
-    if msg == "load" then
+    elseif msg == "load" then
         load_table("monitoredSpells")
-    end
-    if msg == "load blacklist" then
+    elseif msg == "load blacklist" then
         load_table("blacklist")
+    elseif msg == "reset" then
+        reset_spell_numbers()
+    elseif msg == "hard reset" then
+        hard_reset_table()
+    elseif msg == "sort cd" then
+        sort_table("cd")
+    elseif msg == "sort name" then
+        sort_table("name")
+    elseif msg == "sort id" then
+        sort_table("spell id")
+    elseif msg == "learning_mode true" then
+        learning_mode = true
+    elseif msg == "learning_mode false" then
+        learning_mode = false
+    else
+        print("Unknown slash command: ",msg)
     end
 end
 
@@ -292,17 +304,25 @@ local function get_all_spells_with_cd_over_threshold()
                 if spellID == k then is_in_blacklist = 1 end
             end
 
+            local is_in_table = 0
+            for k,v in pairs(monitoredSpells) do
+                if spellID == v.spellID then is_in_table = 1 end
+            end
+
             if not spellID then 
                 -- print("Not Spell ID: ",spellID)
                 -- If spellID isn't valid then do nothing, else keep running.
             elseif is_in_blacklist == 1 then
                 -- print("Blacklisted spell.")
                 -- If it's in the blacklist, don't add it to the table.
+            elseif is_in_table == 1 then
+                -- It's in the table; don't re-add it.
             else
                 local start, duration, enabled = GetSpellCooldown(spellID)
                 if duration and duration >= track_threshold then
                     -- print("Yes: ",spellName)
-                    monitoredSpells[spellID] = {spellID=spellID, spellName=spellName, cooldown=duration, lastused=-1}
+                    -- Assuming it's an offensive spell until told otherwise.
+                    table.insert(monitoredSpells,{spellID=spellID, spellName=spellName, cooldown=duration, lastUsed=-1, spellIcon=spellIcon, classification="offensive"})
                 else
                     -- print("No:  ",spellName)
                 end
@@ -313,6 +333,7 @@ local function get_all_spells_with_cd_over_threshold()
     save_to_file()
 end
 
+-- Remove spells in the blacklist from monitoredSpells
 function blacklist_cleanse()
     print("Before: ")
     printTable(monitoredSpells)
@@ -338,7 +359,7 @@ function add_to_blacklist(name_to_blacklist)
             local spellName, _, spellIcon, _, _, _, spellID = GetSpellInfo(spellName)
 
             if spellName == name_to_blacklist then
-                blacklist[spellID] = spellName
+                blacklist[spellID] = {spellID=spellID,spellName=spellName,spellIcon=spellIcon}
             end
         end
     end
@@ -354,28 +375,146 @@ local function updateTableText()
     if not monitoredSpells then return end
 
     -- Clear the current text
-    spNameText:SetText("Spell Name\n")
-    spcdText:SetText("CD\n")
-    spluText:SetText("LU\n")
-    mcText:SetText("MC\n")
+    spNameText:SetText(string.format("|cFFFFFFFFSpell Name|r\n"))
+    spcdText:SetText(string.format("|cFFFFFFFFCD|r\n"))
+    spluText:SetText(string.format("|cFFFFFFFFSLU|r\n"))
+    mcText:SetText(string.format("|cFFFFFFFFMC|r\n"))
+
+    -- This might should be its own table but for now it's not.
+    local defensive_spells = {}
+    local crowd_control_spells = {}
 
     -- Iterate over the filtered spells and add them to the text
-    for _, spellData in pairs(monitoredSpells) do
-        -- Add the formatted line to the previous lines.
+    for k, spellData in pairs(monitoredSpells) do
+        if spellData.classification == "defensive" then
+            table.insert(defensive_spells,spellData)
+        elseif spellData.classification == "crowd_control" then
+            table.insert(crowd_control_spells,spellData)
+        else
+            -- Add the formatted line to the previous lines.
+            local sp_prev = spNameText:GetText()
+            local cd_prev = spcdText:GetText()
+            local lu_prev = spluText:GetText()
+            local mc_prev = mcText:GetText()
+
+            local sinceLastUsed = GetTime() - spellData.lastUsed
+            local mc = sinceLastUsed / spellData.cooldown
+            local make_red = false
+            local make_orange = false
+            if mc >= 2 then
+                make_red = true
+            end
+            if mc >= 1 then
+                make_orange = true
+            end
+
+            spNameText:SetText(sp_prev .. spellData.spellName .. "\n")
+            spcdText:SetText(cd_prev .. string.format("%d",spellData.cooldown) .. "\n")
+            spluText:SetText(lu_prev .. string.format("%d",sinceLastUsed) .. "\n")
+            if make_red == true then 
+                mcText:SetText(mc_prev .. string.format("|cFFFF0000%d|r",mc) .. "\n")
+            elseif make_orange == true then
+                mcText:SetText(mc_prev .. string.format("|cFFFFA500%d|r",mc) .. "\n")
+            else
+                mcText:SetText(mc_prev .. string.format("%d",mc) .. "\n")
+            end
+        end
+    end
+
+    if #defensive_spells > 0 then
         local sp_prev = spNameText:GetText()
         local cd_prev = spcdText:GetText()
         local lu_prev = spluText:GetText()
         local mc_prev = mcText:GetText()
 
-        local sinceLastUsed = GetTime() - spellData.lastused
-        local mc = sinceLastUsed / spellData.cooldown
+        spNameText:SetText(sp_prev .. string.format("\n\n|cFFFFFFFFDefensive Spells|r\n"))
+        spcdText:SetText(cd_prev .. string.format("\n\n|cFFFFFFFFCD|r\n"))
+        spluText:SetText(lu_prev .. string.format("\n\n|cFFFFFFFFSLU|r\n"))
+        mcText:SetText(mc_prev .. string.format("\n\n|cFFFFFFFFMC|r\n"))
 
-        spNameText:SetText(sp_prev .. spellData.spellName .. "\n")
-        spcdText:SetText(cd_prev .. string.format("%d",spellData.cooldown) .. "\n")
-        spluText:SetText(lu_prev .. string.format("%d",sinceLastUsed) .. "\n")
-        mcText:SetText(mc_prev .. string.format("%d",mc) .. "\n")
+        for k, spellData in pairs(defensive_spells) do
+            if false then
+                -- Nothing but it looks symmetrical this way 
+            else
+                -- Add the formatted line to the previous lines.
+                local sp_prev = spNameText:GetText()
+                local cd_prev = spcdText:GetText()
+                local lu_prev = spluText:GetText()
+                local mc_prev = mcText:GetText()
+
+                local sinceLastUsed = GetTime() - spellData.lastUsed
+                local mc = sinceLastUsed / spellData.cooldown
+                local make_red = false
+                local make_orange = false
+                if mc >= 2 then
+                    make_red = true
+                end
+                if mc >= 1 then
+                    make_orange = true
+                end
+
+                spNameText:SetText(sp_prev .. spellData.spellName .. "\n")
+                spcdText:SetText(cd_prev .. string.format("%d",spellData.cooldown) .. "\n")
+                spluText:SetText(lu_prev .. string.format("%d",sinceLastUsed) .. "\n")
+                if make_red == true then 
+                    mcText:SetText(mc_prev .. string.format("|cFFFF0000%d|r",mc) .. "\n")
+                elseif make_orange == true then
+                    mcText:SetText(mc_prev .. string.format("|cFFFFA500%d|r",mc) .. "\n")
+                else
+                    mcText:SetText(mc_prev .. string.format("%d",mc) .. "\n")
+                end
+            end
+        end
+    end
+
+    if #crowd_control_spells > 0 then
+        local sp_prev = spNameText:GetText()
+        local cd_prev = spcdText:GetText()
+        local lu_prev = spluText:GetText()
+        local mc_prev = mcText:GetText()
+
+        spNameText:SetText(sp_prev .. string.format("\n\n|cFFFFFFFFUtility Spells|r\n"))
+        spcdText:SetText(cd_prev .. string.format("\n\n|cFFFFFFFFCD|r\n"))
+        spluText:SetText(lu_prev .. string.format("\n\n|cFFFFFFFFSLU|r\n"))
+        mcText:SetText(mc_prev .. string.format("\n\n|cFFFFFFFFMC|r\n"))
+
+        for k, spellData in pairs(crowd_control_spells) do
+            if false then 
+                -- Nothing but it looks symmetrical this way
+            else
+                -- Add the formatted line to the previous lines.
+                local sp_prev = spNameText:GetText()
+                local cd_prev = spcdText:GetText()
+                local lu_prev = spluText:GetText()
+                local mc_prev = mcText:GetText()
+
+                local sinceLastUsed = GetTime() - spellData.lastUsed
+                local mc = sinceLastUsed / spellData.cooldown
+                local make_red = false
+                local make_orange = false
+                if mc >= 2 then
+                    make_red = true
+                end
+                if mc >= 1 then
+                    make_orange = true
+                end
+
+                spNameText:SetText(sp_prev .. spellData.spellName .. "\n")
+                spcdText:SetText(cd_prev .. string.format("%d",spellData.cooldown) .. "\n")
+                spluText:SetText(lu_prev .. string.format("%d",sinceLastUsed) .. "\n")
+                if make_red == true then 
+                    mcText:SetText(mc_prev .. string.format("|cFFFF0000%d|r",mc) .. "\n")
+                elseif make_orange == true then
+                    mcText:SetText(mc_prev .. string.format("|cFFFFA500%d|r",mc) .. "\n")
+                else
+                    mcText:SetText(mc_prev .. string.format("%d",mc) .. "\n")
+                end
+            end
+        end
     end
 end
+
+
 
 -- Function to update spell cooldowns
 function updateCooldowns()
@@ -389,16 +528,79 @@ function updateCooldowns()
         -- If the spell is on cooldown and its cooldown is longer than 30 seconds
         if start ~= nil and duration > 1.5 and duration >= track_threshold then
             -- Store the spell data in the monitoredSpells table
-            monitoredSpells[spellData.spellID].lastused = start -- GetTime() - start
+            -- monitoredSpells[spellData.spellID].lastUsed = start -- GetTime() - start
+            spellData.lastUsed = start
         end
     end
 end
 
+function reset_spell_numbers()
+    t_reset = GetTime()
+    for k,v in pairs(monitoredSpells) do
+        v.lastUsed = t_reset
+    end
+end
 
+function hard_reset_table()
+    monitoredSpells = {}
+end
+
+function compare_by_cd(a,b)
+    return a.cooldown < b.cooldown
+end
+
+function compare_by_name(a,b)
+    return a.spellName < b.spellName
+end
+
+function compare_by_spell_id(a,b)
+    return a.spellID < b.spellID
+end
+
+function pairsByKeys (table_to_sort, function_to_sort)
+    -- function to sort is optional
+    local a = {} -- temporary table 
+    for k,v in pairs(table_to_sort) do table.insert(a, v) end
+    table.sort(a, function_to_sort)
+    local i = 0      -- iterator variable
+    local iter = function ()   -- iterator function
+      i = i + 1
+      if a[i] == nil then return nil
+      else return a[i], table_to_sort[a[i]]
+      end
+    end
+    return iter
+end
+
+function sort_table(method)
+    -- print("Sorting by: |",method,"|")
+    -- print("-----------")
+    -- print("Before: ")
+    -- printTable(monitoredSpells)
+    if method == "name" then
+        table.sort(monitoredSpells,compare_by_name)
+    elseif method == "cd" then
+        table.sort(monitoredSpells,compare_by_cd)
+        -- for name,line in pairsByKeys(monitoredSpells,compare_by_cd) do
+        --     print("Name: ",name,"Line: ",line)
+        --     --printTable(line)
+        -- end
+    elseif method == "spell id" then
+        table.sort(monitoredSpells,compare_by_spell_id)
+    else
+        print("Unknown sort method ",method)
+    end
+    -- print("-----------")
+    -- print("After: ")
+    -- printTable(monitoredSpells)
+    -- print("-----------")
+end
 
 local function onTick()
     -- print("Tick: ",GetTime())
-    get_all_spells_with_cd_over_threshold()
+    if learning_mode == true then
+        get_all_spells_with_cd_over_threshold()
+    end
     updateCooldowns()
     updateTableText()
     C_Timer.After(0.5, onTick)
