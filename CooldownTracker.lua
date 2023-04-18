@@ -5,7 +5,6 @@
 --   Main frame reset button.
 --   Way to make Missed Uses text red only for a particular row.
 
-
 -- Create a new frame named 'CooldownTrackerFrame' with a size of 300x400
 local cooldownFrame = CreateFrame("Frame", "CooldownTrackerFrame", UIParent, "BackdropTemplate")
 cooldownFrame:SetSize(300, 400)
@@ -27,13 +26,13 @@ cooldownFrame:Show()
 if true then
     -- Create a new frame for the button
     local resetButtonFrame = CreateFrame("Frame", "resetButtonFrame", cooldownFrame)
-    resetButtonFrame:SetSize(100, 30)
-    resetButtonFrame:SetPoint("BOTTOM", cooldownFrame, "BOTTOM", 0, 10)
+    resetButtonFrame:SetSize(150, 30)
+    resetButtonFrame:SetPoint("BOTTOMLEFT", cooldownFrame, "BOTTOMLEFT", 5, 10)
 
     -- Create the button and add it to the frame
     local resetButton = CreateFrame("Button", "resetButton", resetButtonFrame, "UIPanelButtonTemplate")
     resetButton:SetPoint("CENTER", resetButtonFrame, "CENTER", 0, 0)
-    resetButton:SetSize(80, 22)
+    resetButton:SetSize(140, 22)
     resetButton:SetText("Reset Spell Numbers")
 
     -- Set the click handler for the button
@@ -42,6 +41,25 @@ if true then
     end)
 end
 
+-- Add a "pause" button to the bottom as well.
+local is_running = true
+if true then
+    -- Create a new frame for the button
+    local pauseButtonFrame = CreateFrame("Frame", "pauseButtonFrame", cooldownFrame)
+    pauseButtonFrame:SetSize(150, 30)
+    pauseButtonFrame:SetPoint("BOTTOMRIGHT", cooldownFrame, "BOTTOMRIGHT", -5, 10)
+
+    -- Create the button and add it to the frame
+    local pauseButton = CreateFrame("Button", "pauseButton", pauseButtonFrame, "UIPanelButtonTemplate")
+    pauseButton:SetPoint("CENTER", pauseButtonFrame, "CENTER", 0, 0)
+    pauseButton:SetSize(140, 22)
+    pauseButton:SetText("Pause Addon")
+
+    -- Set the click handler for the button
+    pauseButton:SetScript("OnClick", function()
+        toggle_ticking()
+    end)
+end
 
 -- Create a new font string named 'spNameText' inside 'cooldownFrame'
 local spNameText = cooldownFrame:CreateFontString(nil, "OVERLAY", "GameFontNormal") -- spell name 
@@ -92,11 +110,6 @@ local learning_mode = true
 
 local initialized = 0
 
--- Logic to load the saved table.
-local frame = CreateFrame("Frame")
-frame:RegisterEvent("ADDON_LOADED")
-
-
 
 function save_spelllist()
     -- Save the bs table to the SavedVariables file
@@ -128,30 +141,25 @@ function save_to_file()
     save_options()
 end
 
-    
---LoadAddon("Options/Options.lua")
--- if IsAddOnLoaded("CooldownTracker_Options") then
---     include("Options/Options.lua")
--- else
---     print("Not IsAddOnLoaded")
--- end
 
+local function addon_loaded()
+    load_table("monitoredSpells")
+    load_table("blacklist")
+    load_table("cdt_options")
 
+    CreateOptionsPanel()
+end
 
-local function addon_loaded(context, event, addon_name)
-    if addon_name == "CooldownTracker" then
-        load_table("monitoredSpells")
-        load_table("blacklist")
-        load_table("cdt_options")
-
-        -- CreateOptionsPanel()
-
-        -- Unregister the ADDON_LOADED event
-        frame:UnregisterEvent("ADDON_LOADED")
+local function startup()
+    spec_idx = GetSpecialization()
+    _,spec_name,_,spec_icon,_,_ = GetSpecializationInfo(spec_idx)
+    if spec_idx == nil or spec_name == nil then
+        C_Timer.After(1,startup)
+    else
+        addon_loaded()
     end
 end
 
-frame:SetScript("OnEvent", addon_loaded)
 
 
 
@@ -164,6 +172,10 @@ frame:SetScript("OnEvent", addon_loaded)
 -- ========================================================================
 function load_table(table_name)
     if table_name == "monitoredSpells" then
+        spec_idx = GetSpecialization()
+        _,spec_name,_,spec_icon,_,_ = GetSpecializationInfo(spec_idx)
+
+        print("Spec name: ",spec_name)
         -- Initialize if needed.
         if not monitoredSpells then
             monitoredSpells = {}
@@ -171,20 +183,29 @@ function load_table(table_name)
 
         -- Initialize the table and subtable if they don't exist.
         if CooldownTrackerDB == nil then
+            print("CooldownTrackerDB nil")
             CooldownTrackerDB = {}
         end
         if CooldownTrackerDB[UnitClass("player")] == nil then
+            print("CooldownTrackerDB[UnitClass(\"Player\")] nil")
             CooldownTrackerDB[UnitClass("player")] = {}
         end
 
-        if CooldownTrackerDB[UnitClass("player")].saved_spells == nil then
-            CooldownTrackerDB[UnitClass("player")].saved_spells = {}
+        if CooldownTrackerDB[UnitClass("player")][spec_name] == nil then
+            print("CooldownTrackerDB[UnitClass(\"Player\")][spec_name] nil")
+            print("spec_name = ",spec_name)
+            CooldownTrackerDB[UnitClass("player")][spec_name] = {}
+        end
+
+        if CooldownTrackerDB[UnitClass("player")][spec_name].saved_spells == nil then
+            print("CooldownTrackerDB[UnitClass(\"Player\")][spec_name].saved spells nil")
+            CooldownTrackerDB[UnitClass("player")][spec_name].saved_spells = {}
         end
 
         -- Load the monitoredSpells table from the saved variable table
         if CooldownTrackerDB and CooldownTrackerDB[UnitClass("player")] then
             -- This seems to act like a pointer? I don't get it to be honest.
-            monitoredSpells = CooldownTrackerDB[UnitClass("player")].saved_spells
+            monitoredSpells = CooldownTrackerDB[UnitClass("player")][spec_name].saved_spells
             if monitoredSpells == nil then 
                 monitoredSpells = {}
             end
@@ -272,10 +293,15 @@ local function slashCommandHandler(msg)
         learning_mode = true
     elseif msg == "learning_mode false" then
         learning_mode = false
+    elseif msg == "validate" then
+        validate_table_for_known_spells()
     else
         print("Unknown slash command: ",msg)
     end
 end
+
+-- Checks that GetSpecialization returns a non-nil value before loading tables.
+startup()
 
 -- Register the slash command
 SLASH_CDT1 = "/cdt"
@@ -283,7 +309,7 @@ SlashCmdList["CDT"] = slashCommandHandler
 
 
 -- =========================================================================
-
+local printit = true
 -- Runs on startup only. Iterates over all spells, adding only spells with a 
 --   cd greater than <threshold> seconds to the table.
 local function get_all_spells_with_cd_over_threshold()
@@ -302,7 +328,7 @@ local function get_all_spells_with_cd_over_threshold()
             local is_in_blacklist = 0
             for k,v in pairs(blacklist) do
                 if spellID == k then is_in_blacklist = 1 end
-            end
+            end            
 
             local is_in_table = 0
             for k,v in pairs(monitoredSpells) do
@@ -322,15 +348,23 @@ local function get_all_spells_with_cd_over_threshold()
                 if duration and duration >= track_threshold then
                     -- print("Yes: ",spellName)
                     -- Assuming it's an offensive spell until told otherwise.
-                    table.insert(monitoredSpells,{spellID=spellID, spellName=spellName, cooldown=duration, lastUsed=-1, spellIcon=spellIcon, classification="offensive"})
+                    -- is_known is probably how I'll handle different talent sets? Upon talent set swap it goes through the list and hides any spells not known.
+                    table.insert(monitoredSpells,{spellID=spellID, spellName=spellName, cooldown=duration, lastUsed=-1, spellIcon=spellIcon, classification="offensive", is_known=true})
                 else
                     -- print("No:  ",spellName)
                 end
             end
         end
     end
-
     save_to_file()
+end
+
+function validate_table_for_known_spells()
+    if initialized == 0 then return end
+    for k,spellData in pairs(monitoredSpells) do
+        is_known_new = IsSpellKnown(spellData.spellID)
+        spellData.is_known = is_known_new
+    end
 end
 
 -- Remove spells in the blacklist from monitoredSpells
@@ -386,37 +420,41 @@ local function updateTableText()
 
     -- Iterate over the filtered spells and add them to the text
     for k, spellData in pairs(monitoredSpells) do
-        if spellData.classification == "defensive" then
-            table.insert(defensive_spells,spellData)
-        elseif spellData.classification == "crowd_control" then
-            table.insert(crowd_control_spells,spellData)
-        else
-            -- Add the formatted line to the previous lines.
-            local sp_prev = spNameText:GetText()
-            local cd_prev = spcdText:GetText()
-            local lu_prev = spluText:GetText()
-            local mc_prev = mcText:GetText()
-
-            local sinceLastUsed = GetTime() - spellData.lastUsed
-            local mc = sinceLastUsed / spellData.cooldown
-            local make_red = false
-            local make_orange = false
-            if mc >= 2 then
-                make_red = true
-            end
-            if mc >= 1 then
-                make_orange = true
-            end
-
-            spNameText:SetText(sp_prev .. spellData.spellName .. "\n")
-            spcdText:SetText(cd_prev .. string.format("%d",spellData.cooldown) .. "\n")
-            spluText:SetText(lu_prev .. string.format("%d",sinceLastUsed) .. "\n")
-            if make_red == true then 
-                mcText:SetText(mc_prev .. string.format("|cFFFF0000%d|r",mc) .. "\n")
-            elseif make_orange == true then
-                mcText:SetText(mc_prev .. string.format("|cFFFFA500%d|r",mc) .. "\n")
+        -- Only need to check if it's known here because the defensive_spells and crowd_control_spells tables are set here.
+        --   If that changes, then you'll have to add the logic below.
+        if spellData.is_known == true then
+            if spellData.classification == "defensive" then
+                table.insert(defensive_spells,spellData)
+            elseif spellData.classification == "crowd_control" then
+                table.insert(crowd_control_spells,spellData)
             else
-                mcText:SetText(mc_prev .. string.format("%d",mc) .. "\n")
+                -- Add the formatted line to the previous lines.
+                local sp_prev = spNameText:GetText()
+                local cd_prev = spcdText:GetText()
+                local lu_prev = spluText:GetText()
+                local mc_prev = mcText:GetText()
+
+                local sinceLastUsed = GetTime() - spellData.lastUsed
+                local mc = sinceLastUsed / spellData.cooldown
+                local make_red = false
+                local make_orange = false
+                if mc >= 2 then
+                    make_red = true
+                end
+                if mc >= 1 then
+                    make_orange = true
+                end
+
+                spNameText:SetText(sp_prev .. spellData.spellName .. "\n")
+                spcdText:SetText(cd_prev .. string.format("%d",spellData.cooldown) .. "\n")
+                spluText:SetText(lu_prev .. string.format("%d",sinceLastUsed) .. "\n")
+                if make_red == true then 
+                    mcText:SetText(mc_prev .. string.format("|cFFFF0000%d|r",mc) .. "\n")
+                elseif make_orange == true then
+                    mcText:SetText(mc_prev .. string.format("|cFFFFA500%d|r",mc) .. "\n")
+                else
+                    mcText:SetText(mc_prev .. string.format("%d",mc) .. "\n")
+                end
             end
         end
     end
@@ -539,6 +577,7 @@ function reset_spell_numbers()
     for k,v in pairs(monitoredSpells) do
         v.lastUsed = t_reset
     end
+    updateTableText()
 end
 
 function hard_reset_table()
@@ -597,6 +636,13 @@ function sort_table(method)
 end
 
 local function onTick()
+    if is_running ~= nil then
+        if is_running == false then 
+            return 
+        else
+            -- Else we are still running. 
+        end
+    end
     -- print("Tick: ",GetTime())
     if learning_mode == true then
         get_all_spells_with_cd_over_threshold()
@@ -607,10 +653,24 @@ local function onTick()
 end
 
 local function onTick_init()
+    -- Check every second if we're initialized. Once we are, 
+    --   wait 2 seconds (probably overkill) then start up.
     if initialized == 0 then
         C_Timer.After(1,onTick_init)
     else
-        C_Timer.After(0.5,onTick)
+        C_Timer.After(2,onTick)
+    end
+end
+
+function toggle_ticking()
+    is_running = not(is_running)
+
+    if is_running == true then
+        -- if we're unpausing it 
+        pauseButton:SetText("Pause Addon")
+        onTick()
+    elseif is_running == false then
+        pauseButton:SetText("Unpause Addon")
     end
 end
 
@@ -620,9 +680,13 @@ onTick_init()
 
 -- Event handler for PLAYER_LOGIN event
 local function onPlayerLogin()
-    get_all_spells_with_cd_over_threshold()
-    --filterSpellsWithCooldownGreaterThan30()
-    updateTableText()
+    if initialized == 1 then
+        get_all_spells_with_cd_over_threshold()
+        --filterSpellsWithCooldownGreaterThan30()
+        updateTableText()
+    else
+        C_Timer.After(0.5,onPlayerLogin)
+    end
 end
 
 -- Event handler for SPELL_UPDATE_COOLDOWN event
@@ -634,13 +698,47 @@ end
 -- Register the event handlers
 cooldownFrame:RegisterEvent("PLAYER_LOGIN")
 cooldownFrame:RegisterEvent("SPELL_UPDATE_COOLDOWN")
+cooldownFrame:RegisterEvent("ACTIVE_TALENT_GROUP_CHANGED")
+cooldownFrame:RegisterEvent("TRAIT_TREE_CHANGED")
+--cooldownFrame:RegisterEvent("ACTIVE_COMBAT_CONFIG_CHANGED")
+--cooldownFrame:RegisterEvent("PLAYER_TALENT_UPDATE")
+
 
 -- Set the script for the OnEvent event of 'cooldownFrame'
 cooldownFrame:SetScript("OnEvent", function(self, event, ...)
--- Call the appropriate event handler based on the event that occurred
-if event == "PLAYER_LOGIN" then
-    onPlayerLogin(...)
-elseif event == "SPELL_UPDATE_COOLDOWN" then
-    onSpellUpdateCooldown(...)
+    -- Call the appropriate event handler based on the event that occurred
+    if event == "PLAYER_LOGIN" then
+        onPlayerLogin(...)
+    elseif event == "SPELL_UPDATE_COOLDOWN" then
+        onSpellUpdateCooldown(...)
+    elseif event == "ACTIVE_TALENT_GROUP_CHANGED" then
+        load_table("monitoredSpells")
+        validate_table_for_known_spells()
+    elseif event == "TRAIT_TREE_CHANGED" then 
+        -- It takes 5 seconds to change talents, so wait to do the validation.
+        C_Timer.After(6,validate_table_for_known_spells)
+    else
+        print("Event: ",event)
+    end
+end)
+
+
+
+local function allow_frame_movement(bool_val)
+    cooldownFrame:SetMovable(true)
+    cooldownFrame:EnableMouse(true)
+    cooldownFrame:SetScript("OnMouseDown",function(self, button)
+        if button == "LeftButton" then 
+            self:StartMoving()
+        end
+    end)
+    cooldownFrame:SetScript("OnMouseUp",function(self,button)
+        self:StopMovingOrSizing()
+    end)
+end
+allow_frame_movement(true)
+
+-- ============================================================================
+-- ============================================================================
 end
 end)
