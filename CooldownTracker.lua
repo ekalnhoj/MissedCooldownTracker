@@ -96,6 +96,10 @@ mcText:SetHeight(360)
 
 -- A "total missed casts" text box might be useful, but not necessary atm.
 
+local classification_options_to_str = {}
+classification_options_to_str["offensive"] ="Offensive"
+classification_options_to_str["defensive"] ="Defensive"
+classification_options_to_str["crowd_control"] ="Crowd Control"
 
 -- Some initialization.
 spNameText:SetText("") -- Could probably just do it in the constructor, but why take chances?
@@ -146,17 +150,19 @@ local function addon_loaded()
     load_table("monitoredSpells")
     load_table("blacklist")
     load_table("cdt_options")
-
-    CreateOptionsPanel()
 end
 
 local function startup()
     spec_idx = GetSpecialization()
-    _,spec_name,_,spec_icon,_,_ = GetSpecializationInfo(spec_idx)
-    if spec_idx == nil or spec_name == nil then
-        C_Timer.After(1,startup)
+    if spec_idx ~= nil then
+        _,spec_name,_,spec_icon,_,_ = GetSpecializationInfo(spec_idx)
+        if spec_name ~= nil then
+            addon_loaded()
+        else
+            C_Timer.After(1,startup)
+        end
     else
-        addon_loaded()
+        C_Timer.After(1,startup)
     end
 end
 
@@ -171,9 +177,16 @@ end
 
 -- ========================================================================
 function load_table(table_name)
+    if table_name == nil then table_name = "monitoredSpells" end
+
     if table_name == "monitoredSpells" then
         spec_idx = GetSpecialization()
         _,spec_name,_,spec_icon,_,_ = GetSpecializationInfo(spec_idx)
+
+        if spec_name == nil then
+            C_Timer.After(1,load_table)
+            return
+        end
 
         print("Spec name: ",spec_name)
         -- Initialize if needed.
@@ -371,10 +384,14 @@ end
 function blacklist_cleanse()
     print("Before: ")
     printTable(monitoredSpells)
-    for k,v in pairs(monitoredSpells) do
-        if blacklist[k] ~= nil then
-            print("Removing from monitored spells: ",k,": ",monitoredSpells[k].spellName)
-            monitoredSpells[k] = nil
+    -- Yes it's n-squared, sorry. But blacklist is probably short so 
+    --   realistically it shouldn't be too bad I think?
+    for ib,entryb in ipairs(blacklist) do
+        for i,entry in ipairs(monitoredSpells) do        
+            if entry.spellID == entryb.spellID then
+                print("Removing from monitored spells: ",entry.spellID,": ",entry.spellName)
+                table.remove(monitoredSpells,i)
+            end
         end
     end
     print("After: ")
@@ -383,7 +400,7 @@ function blacklist_cleanse()
     save_to_file()
 end
 
-function add_to_blacklist(name_to_blacklist)
+function blacklist_add_by_name(spellName)
     print("Adding ",name_to_blacklist," to blacklist.")
     for i = 1,GetNumSpellTabs() do
         local _, _, offset, numSpells = GetSpellTabInfo(i)
@@ -401,6 +418,60 @@ function add_to_blacklist(name_to_blacklist)
     printTable(blacklist)
     print("Cleansing with new blacklist.")
     blacklist_cleanse()
+end
+
+function blacklist_add_by_id(spellID)
+    -- Check if it's already being monitored.
+    local already_monitored = false
+    for i, entry in ipairs(monitoredSpells) do
+        if entry.spellID == spellID then
+            -- Add to blacklist and remove from monitoredSpells
+            table.insert(blacklist,entry)
+            table.remove(monitoredSpells,i)
+            already_monitored = true
+        end
+    end
+
+    -- If it wasn't already monitored, preemptively add it with some barebones info.
+    if already_monitored == false then
+        local spellName, _, spellIcon, _, _, _,_, _ = GetSpellInfo(spellID)
+        table.insert(blacklist,{spellID=spellID, spellName=spellName, cooldown=-1, lastUsed=-1, spellIcon=spellIcon, classification="offensive", is_known=true})
+    end
+
+    print("Cleansing with new blacklist.")
+    blacklist_cleanse()
+end
+
+function blacklist_remove(name_to_blacklist)
+    print("Removing ",name_to_blacklist," from blacklist.")
+    for i = 1,GetNumSpellTabs() do
+        local _, _, offset, numSpells = GetSpellTabInfo(i)
+        
+        for j = 1, numSpells do
+            local spellName = GetSpellBookItemName(j + offset, BOOKTYPE_SPELL)
+            local spellName, _, spellIcon, _, _, _, spellID = GetSpellInfo(spellName)
+
+            if spellName == name_to_blacklist then
+                blacklist[spellID] = {spellID=spellID,spellName=spellName,spellIcon=spellIcon}
+            end
+        end
+    end
+    print("New blacklist: ")
+    printTable(blacklist)
+    print("Cleansing with new blacklist.")
+    blacklist_cleanse()
+end
+
+function blacklist_remove_by_id(spellID)
+    -- Only re-add it if it's a known spell.
+    for i,entry in ipairs(blacklist) do
+        if entry.spellID == spellID then
+            if IsSpellKnown(spellID) == true then
+                table.insert(monitoredSpells,entry)
+            end
+            table.remove(blacklist,i)
+        end
+    end
 end
 
 -- Function to update the display text of 'spNameText'
@@ -740,5 +811,176 @@ allow_frame_movement(true)
 
 -- ============================================================================
 -- ============================================================================
+-- ============================================================================
+
+
+local CDTOptions = CreateFrame("Frame", "CooldownTrackerOptionsFrame", InterfaceOptionsFramePanelContainer)
+CDTOptions.name = "CooldownTracker"
+
+local function CDT_Draw_Options()
+    -- Clear the frame
+    for i, child in ipairs({CDTOptions:GetChildren()}) do
+        child:Hide()
+        child:SetParent(nil)
+    end
+      
+    local CDTList = CreateFrame("ScrollFrame", "CooldownTrackerListFrame", CDTOptions, "UIPanelScrollFrameTemplate")
+    CDTList:SetSize(CDTOptions:GetWidth()*0.95, CDTOptions:GetHeight()*2/3)
+    CDTList:SetPoint("TOPLEFT", 0, 0)
+
+    local CooldownTrackerListContent = CreateFrame("Frame", "CooldownTrackerListContentFrame", CDTList)
+    CooldownTrackerListContent:SetSize(CDTList:GetSize())
+    CDTList:SetScrollChild(CooldownTrackerListContent)
+
+    -- Make some titles for the table up top
+    local monitoredSpellsTitle = CooldownTrackerListContent:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    monitoredSpellsTitle:SetPoint("TOPLEFT", 0, 0)
+    monitoredSpellsTitle:SetText("Monitored Spells")
+    monitoredSpellsTitle:SetTextColor(1, 1, 1)
+    monitoredSpellsTitle:SetSize(120,24)
+
+    local dropdownTitle = CooldownTrackerListContent:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    dropdownTitle:SetPoint("LEFT", monitoredSpellsTitle, "RIGHT", 16, 0)
+    dropdownTitle:SetText("Classification")
+    dropdownTitle:SetTextColor(1, 1, 1)
+    dropdownTitle:SetSize(140,16)
+
+    local y_size = 24
+    local y_pad = 8  -- this is a guess
+    local offset = 0
+    for i, entry in ipairs(monitoredSpells) do
+        local button = CreateFrame("Frame", "MyCDTEntry"..i, CooldownTrackerListContent)
+        button:SetPoint("TOPLEFT", monitoredSpellsTitle, "BOTTOMLEFT", 0, -offset)
+        button:SetSize(120, y_size)
+
+        local buttonText = button:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+        buttonText:SetPoint("LEFT", button, "LEFT", 5, 0)
+        buttonText:SetText(entry.spellName)
+        -- buttonText:SetTextColor(1, 1, 1) -- Set the font color to white
+        buttonText:SetWidth(120)
+        buttonText:SetJustifyH("LEFT")
+
+        local dropdown = CreateFrame("Frame", "MyCDTDropdown"..i, button, "UIDropDownMenuTemplate")
+        dropdown:SetPoint("LEFT", buttonText, "RIGHT", 16, 0)
+        dropdown:SetSize(140,y_size) 
+        -- This SetSize doesn't really work as hoped - a longer text value 
+        --   here makes the width wider? Unclear. But it works for my 
+        --   needs (which is setting the width enough that I am able to
+        --   anchor relative to the dropdown without things getting weird).
+
+        -- print("Entry: ",entry.spellName," | ",entry.classification)
+
+        local options = {
+            {text = "Offensive", value = "offensive"},
+            {text = "Defensive", value = "defensive"},
+            {text = "Crowd Control", value = "crowd_control"},
+        }
+
+        UIDropDownMenu_Initialize(dropdown, function(self, level)
+            for _, option in ipairs(options) do
+                local info = UIDropDownMenu_CreateInfo()
+                info.text = option.text
+                info.value = option.value
+                info.checked = option.value == entry.classification
+                
+                info.func = function(self)
+                    entry.classification = option.value
+                    UIDropDownMenu_SetSelectedValue(dropdown, entry.classification)
+                    UIDropDownMenu_SetText(dropdown,classification_options_to_str[entry.classification])
+                end
+                UIDropDownMenu_AddButton(info, level)
+            end
+        end)
+
+        UIDropDownMenu_SetSelectedValue(dropdown, entry.classification)
+        UIDropDownMenu_SetText(dropdown,classification_options_to_str[entry.classification])
+
+        local blacklistButton = CreateFrame("Button", "CooldownTrackerBlacklistButton"..i, button, "UIPanelButtonTemplate")
+        blacklistButton:SetPoint("LEFT", dropdown, "RIGHT", 16, 0)
+        blacklistButton:SetSize(80, y_size)
+        blacklistButton:SetText("Blacklist")
+        blacklistButton:SetScript("OnClick", function()
+            blacklist_add_by_id(entry.spellID)
+            print("CooldownTracker: ",entry.spellName .. " has been blacklisted.")
+            CDT_Draw_Options()
+        end)
+
+        offset = offset + y_size
+    end
+
+    -- Size versus actual size is getting to be annoying.
+    -- CooldownTrackerListContent:SetSize(400, offset)--offset/y_size*(y_size+y_pad))
+    -- CDTList:SetSize(CooldownTrackerListContent:GetWidth(),CooldownTrackerListContent:GetHeight())
+
+
+    -- ========================================================================
+    -- if true then
+    print("Main Draw")
+
+    local BLList = CreateFrame("ScrollFrame", "BlacklistListFrame", CDTOptions, "UIPanelScrollFrameTemplate")
+    BLList:SetSize(CDTList:GetWidth(), CDTList:GetHeight()*1/2)
+    BLList:SetPoint("TOPLEFT", CDTList, "BOTTOMLEFT", 0, 0)
+
+    local BlacklistContent = CreateFrame("Frame", "BlacklistContentFrame", BLList)
+    BLList:SetScrollChild(BlacklistContent)
+    BlacklistContent:SetSize(BLList:GetSize())
+
+    local blacklistTitle = BlacklistContent:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    blacklistTitle:SetPoint("TOPLEFT", 0, 0)
+    blacklistTitle:SetText("Blacklist")
+    blacklistTitle:SetTextColor(1, 1, 1)
+    blacklistTitle:SetSize(140,16)
+
+    offset = 0
+    -- Populate blacklist table
+    local function PopulateBlacklistTable()
+        for i, entry in ipairs(blacklist) do
+            local button = CreateFrame("Frame", "MyBLTEntry"..i, BlacklistContent)
+            button:SetPoint("TOPLEFT", blacklistTitle, "BOTTOMLEFT", 0, -offset)
+            button:SetSize(120, y_size)
+    
+            local buttonText = button:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+            buttonText:SetPoint("LEFT", button, "LEFT", 5, 0)
+            buttonText:SetText(entry.spellName)
+            -- buttonText:SetTextColor(1, 1, 1) -- Set the font color to white
+            buttonText:SetWidth(120)
+            buttonText:SetJustifyH("LEFT")
+    
+            local unblacklistButton = CreateFrame("Button", "UnBlacklistButton"..i, button, "UIPanelButtonTemplate")
+            unblacklistButton:SetPoint("LEFT", buttonText, "RIGHT", 16, 0)
+            unblacklistButton:SetSize(80, y_size)
+            unblacklistButton:SetText("Un-Blacklist")
+            unblacklistButton:SetScript("OnClick", function()
+                blacklist_remove_by_id(entry.spellID)
+                print("CooldownTracker: ",entry.spellName .. " has been un-blacklisted.")
+                CDT_Draw_Options()
+            end)
+    
+            offset = offset + y_size
+        end
+    end    
+    PopulateBlacklistTable()
+
+    -- BlacklistContent:SetSize(400, offset)--offset/y_size*(y_size+y_pad))
+
+    if false then 
+        BLList:SetSize(400,offset/y_size*(y_size+y_pad))
+    end
+
+    print("=====")
+    print("0: ",CDTOptions:GetSize())
+    print("z: ",CDTOptions:GetRect())
+    print("1: ",CDTList:GetSize())
+    print("a: ",CDTList:GetRect())
+    print("2: ",CooldownTrackerListContent:GetSize())
+    print("b: ",CooldownTrackerListContent:GetRect())
+    print("3: ",BLList:GetSize())
+    print("c: ",BLList:GetRect())
+    print("4: ",BlacklistContent:GetSize())
+    print("d: ",BlacklistContent:GetRect())
 end
-end)
+
+CDTOptions:SetScript("OnShow",CDT_Draw_Options)
+InterfaceOptions_AddCategory(CDTOptions)
+
+
