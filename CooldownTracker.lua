@@ -1,12 +1,18 @@
 -- Next steps: 
 --   Options UI blacklist by Spell ID.
 --   Options UI whitelist spells.
---   Review sort_table(); does it work? How to adjust?
+--   Options in options pane:
+--     tick frequency
+--     tracking threshold
+--   Resizing tracker window
 
 local icon_file_id_to_path = {}
 local periodic_save = true
 local track_threshold = 30
 local learning_mode = true
+
+local debug_print = false
+local debug_print_tab = {}
 
 
 -- Create a new frame named 'CooldownTrackerFrame' with a size of 300x400
@@ -71,7 +77,7 @@ local spcdText = cooldownFrame:CreateFontString(nil, "OVERLAY", "GameFontNormal"
 local spluText = cooldownFrame:CreateFontString(nil, "OVERLAY", "GameFontNormal") -- spell last used (seconds ago)
 local mcText = cooldownFrame:CreateFontString(nil, "OVERLAY", "GameFontNormal") -- missed uses (turns red when it hits 2)
 -- Set the position of 'spNameText' relative to the top left corner of 'cooldownFrame'
-spNameText:SetPoint("TOPLEFT", 20, -20)
+spNameText:SetPoint("TOPLEFT", 40, -20)
 spcdText:SetPoint("TOPLEFT", 140, -20) -- Depends on the width you set below I think
 spluText:SetPoint("TOPLEFT", 180, -20) -- Depends on the width you set below I think
 mcText:SetPoint("TOPLEFT", 220, -20) -- Depends on the width you set below I think
@@ -98,6 +104,13 @@ spluText:SetHeight(360)
 mcText:SetWidth(40)
 mcText:SetHeight(360)
 
+
+local spellIconFrame = CreateFrame("Frame","SpellIconHolderFrame",cooldownFrame)
+spellIconFrame:SetPoint("TOPRIGHT",spNameText,"TOPLEFT",0,offset)
+spellIconFrame:SetSize(20,spNameText:GetHeight())
+spellIconTextures = {}
+local update_icons = true
+
 -- A "total missed casts" text box might be useful, but not necessary atm.
 
 local classification_options_to_str = {}
@@ -106,7 +119,6 @@ classification_options_to_str["defensive"] ="Defensive"
 classification_options_to_str["crowd_control"] ="Crowd Control"
 
 -- Some initialization.
-spNameText:SetText("") -- Could probably just do it in the constructor, but why take chances?
 local lastUseTime_default = 0
 local tableTextStr = ""
 
@@ -162,7 +174,7 @@ local function addon_loaded()
     --   ArtTextureID thing to be a global which feels bad but at least
     --   it works. 
     icon_file_id_to_path = _G["ArtTexturePaths"]
-    print("CooldownTracker ready to go.")
+    if debug_print == true then print("CooldownTracker ready to go.") end
 end
 
 local function startup()
@@ -201,7 +213,7 @@ function load_table(table_name)
             return
         end
 
-        print("Spec name: ",spec_name)
+        if debug_print == true then print("Spec name: ",spec_name) end
         -- Initialize if needed.
         if not monitoredSpells then
             monitoredSpells = {}
@@ -209,22 +221,24 @@ function load_table(table_name)
 
         -- Initialize the table and subtable if they don't exist.
         if CooldownTrackerDB == nil then
-            print("CooldownTrackerDB nil")
+            if debug_print == true then print("CooldownTrackerDB nil") end
             CooldownTrackerDB = {}
         end
         if CooldownTrackerDB[UnitClass("player")] == nil then
-            print("CooldownTrackerDB[UnitClass(\"Player\")] nil")
+            if debug_print == true then print("CooldownTrackerDB[UnitClass(\"Player\")] nil") end
             CooldownTrackerDB[UnitClass("player")] = {}
         end
 
         if CooldownTrackerDB[UnitClass("player")][spec_name] == nil then
-            print("CooldownTrackerDB[UnitClass(\"Player\")][spec_name] nil")
-            print("spec_name = ",spec_name)
+            if debug_print == true then 
+                print("CooldownTrackerDB[UnitClass(\"Player\")][spec_name] nil")
+                print("spec_name = ",spec_name)
+            end
             CooldownTrackerDB[UnitClass("player")][spec_name] = {}
         end
 
         if CooldownTrackerDB[UnitClass("player")][spec_name].saved_spells == nil then
-            print("CooldownTrackerDB[UnitClass(\"Player\")][spec_name].saved spells nil")
+            if debug_print == true then print("CooldownTrackerDB[UnitClass(\"Player\")][spec_name].saved spells nil") end
             CooldownTrackerDB[UnitClass("player")][spec_name].saved_spells = {}
         end
 
@@ -274,7 +288,7 @@ function load_table(table_name)
             cdt_opts = CooldownTrackerDB.cdt_options
         end
     end
-    print("Loaded table ",table_name)
+    if debug_print == true then print("Loaded table ",table_name) end
 end
 
 function printTable(t, indent)
@@ -341,16 +355,11 @@ local printit = true
 -- Probably best it run only on startup but that won't work if users don't have
 --   all the spells learned yet. So for now it's running every half-ish second.
 local function get_all_spells_with_cd_over_threshold()
-    -- print("In a function of my own making.")
     for i = 1,GetNumSpellTabs() do
         local _, _, offset, numSpells = GetSpellTabInfo(i)
         
         for j = 1, numSpells do
             local spellName = GetSpellBookItemName(j + offset, BOOKTYPE_SPELL)
-
-            -- local spellID = select(2, GetSpellBookItemInfo(spellName, BOOKTYPE_SPELL))
-            -- print(spellID)
-            -- local spellName, _, spellIcon = GetSpellInfo(spellID)
             local spellName, _, spellIcon, _, _, _, spellID = GetSpellInfo(spellName)
 
             local is_in_blacklist = 0
@@ -369,22 +378,21 @@ local function get_all_spells_with_cd_over_threshold()
             end
 
             if not spellID then 
-                -- print("Not Spell ID: ",spellID)
                 -- If spellID isn't valid then do nothing, else keep running.
             elseif is_in_blacklist == 1 then
-                -- print("Blacklisted spell.")
                 -- If it's in the blacklist, don't add it to the table.
             elseif is_in_table == 1 then
                 -- It's in the table; don't re-add it.
             else
                 local start, duration, enabled = GetSpellCooldown(spellID)
                 if duration and duration >= track_threshold then
-                    -- print("Yes: ",spellName)
                     -- Assuming it's an offensive spell until told otherwise.
                     -- is_known is probably how I'll handle different talent sets? Upon talent set swap it goes through the list and hides any spells not known.
                     table.insert(monitoredSpells,{spellID=spellID, spellName=spellName, cooldown=duration, lastUsed=-1, spelIcon=spellIcon, spellIcon_filePath=spellIcon_filePath, classification="offensive", is_known=true})
+                    sort_table("cd")
+                    update_icons = true
                 else
-                    -- print("No:  ",spellName)
+                    -- Do nothing.
                 end
             end
         end
@@ -398,12 +406,15 @@ function validate_table_for_known_spells()
         is_known_new = IsSpellKnown(entry.spellID)
         entry.is_known = is_known_new
     end
+    update_icons = true
 end
 
 -- Remove spells in the blacklist from monitoredSpells
 function blacklist_cleanse()
-    print("Before: ")
-    printTable(monitoredSpells)
+    if debug_print == true then 
+        print("Before: ")
+        printTable(monitoredSpells)
+    end
     -- Yes it's n-squared, sorry. But blacklist is probably short so 
     --   realistically it shouldn't be too bad I think?
     for ib,entryb in ipairs(blacklist) do
@@ -414,10 +425,13 @@ function blacklist_cleanse()
             end
         end
     end
-    print("After: ")
-    printTable(monitoredSpells)
+    if debug_print == true then 
+        print("After: ")
+        printTable(monitoredSpells)
+    end
 
     if periodic_save == false then save_to_file() end
+    update_icons = true
 end
 
 function blacklist_add_by_id(spellID)
@@ -442,8 +456,9 @@ function blacklist_add_by_id(spellID)
         table.insert(blacklist,{spellID=spellID, spellName=spellName, cooldown=-1, lastUsed=-1, spellIcon=spellIcon, spellIcon_filePath=spellIcon_filePath, classification="offensive", is_known=true})
     end
 
-    print("Cleansing with new blacklist.")
+    if debug_print == true then print("Cleansing with new blacklist.") end
     blacklist_cleanse()
+    update_icons = true
 end
 
 function blacklist_remove_by_id(spellID)
@@ -452,16 +467,33 @@ function blacklist_remove_by_id(spellID)
         if entry.spellID == spellID then
             if IsSpellKnown(spellID) == true then
                 table.insert(monitoredSpells,entry)
+                sort_table("cd")
             end
             table.remove(blacklist,i)
         end
     end
+    update_icons = true
 end
+
 
 -- Function to update the display text of 'spNameText'
 local function updateTableText()
-    -- print("Tock: updateTableText")
     if not monitoredSpells then return end
+
+    -- Icon upkeeps
+    local y_size = 11.6  -- I don't know. This seems to work.
+    local offset = y_size
+
+    if update_icons == true then
+        for i, child in ipairs({spellIconFrame:GetChildren()}) do
+            child:Hide()
+            child:SetParent(nil)
+        end
+        for i,tex in ipairs(spellIconTextures) do
+            tex:Hide()
+            tex:SetTexture(nil)
+        end
+    end
 
     -- Clear the current text
     spNameText:SetText(string.format("|cFFFFFFFFSpell Name|r\n"))
@@ -510,6 +542,18 @@ local function updateTableText()
                 else
                     mcText:SetText(mc_prev .. string.format("%d",mc) .. "\n")
                 end
+
+                if update_icons == true then
+                    if spellData.spellIcon_filePath ~= nil then
+                        local tempSpellIcon = spellIconFrame:CreateTexture(nil,"ARTWORK")
+                        tempSpellIcon:SetTexture(spellData.spellIcon_filePath)
+                        tempSpellIcon:SetSize(y_size,y_size)
+                        tempSpellIcon:SetPoint("TOPRIGHT",spNameText,"TOPLEFT",-5,-offset)
+                        tempSpellIcon:Show()
+                        table.insert(spellIconTextures,tempSpellIcon)
+                    end
+                end
+                offset = offset+y_size
             end
         end
     end
@@ -524,6 +568,8 @@ local function updateTableText()
         spcdText:SetText(cd_prev .. string.format("\n\n|cFFFFFFFFCD|r\n"))
         spluText:SetText(lu_prev .. string.format("\n\n|cFFFFFFFFSLU|r\n"))
         mcText:SetText(mc_prev .. string.format("\n\n|cFFFFFFFFMC|r\n"))
+
+        offset = offset+3*y_size -- number of newlines
 
         for i, spellData in ipairs(defensive_spells) do
             if false then
@@ -556,6 +602,18 @@ local function updateTableText()
                 else
                     mcText:SetText(mc_prev .. string.format("%d",mc) .. "\n")
                 end
+
+                if update_icons == true then
+                    if spellData.spellIcon_filePath ~= nil then
+                        local tempSpellIcon = spellIconFrame:CreateTexture(nil,"ARTWORK")
+                        tempSpellIcon:SetTexture(spellData.spellIcon_filePath)
+                        tempSpellIcon:SetSize(y_size,y_size)
+                        tempSpellIcon:SetPoint("TOPRIGHT",spNameText,"TOPLEFT",-5,-offset)
+                        tempSpellIcon:Show()
+                        table.insert(spellIconTextures,tempSpellIcon)
+                    end
+                end
+                offset = offset+y_size
             end
         end
     end
@@ -570,6 +628,8 @@ local function updateTableText()
         spcdText:SetText(cd_prev .. string.format("\n\n|cFFFFFFFFCD|r\n"))
         spluText:SetText(lu_prev .. string.format("\n\n|cFFFFFFFFSLU|r\n"))
         mcText:SetText(mc_prev .. string.format("\n\n|cFFFFFFFFMC|r\n"))
+
+        offset = offset+3*y_size -- Number of newlines
 
         for i, spellData in ipairs(crowd_control_spells) do
             if false then 
@@ -602,16 +662,28 @@ local function updateTableText()
                 else
                     mcText:SetText(mc_prev .. string.format("%d",mc) .. "\n")
                 end
+
+                if update_icons == true then
+                    if spellData.spellIcon_filePath ~= nil then
+                        local tempSpellIcon = spellIconFrame:CreateTexture(nil,"ARTWORK")
+                        tempSpellIcon:SetTexture(spellData.spellIcon_filePath)
+                        tempSpellIcon:SetSize(y_size,y_size)
+                        tempSpellIcon:SetPoint("TOPRIGHT",spNameText,"TOPLEFT",-5,-offset)
+                        tempSpellIcon:Show()
+                        table.insert(spellIconTextures,tempSpellIcon)
+                    end
+                end
+                offset = offset+y_size
             end
         end
     end
+    update_icons = false
 end
 
 
 
 -- Function to update spell cooldowns
 function updateCooldowns()
-    -- print("Tock: updateCooldowns")
     if not monitoredSpells then return end
 
     for _, spellData in ipairs(monitoredSpells) do        
@@ -667,27 +739,31 @@ function pairsByKeys (table_to_sort, function_to_sort)
 end
 
 function sort_table(method)
-    -- print("Sorting by: |",method,"|")
-    -- print("-----------")
-    -- print("Before: ")
-    -- printTable(monitoredSpells)
+    if debug_print == true then 
+        print("Sorting by: |",method,"|")
+        print("-----------")
+        print("Before: ")
+        printTable(monitoredSpells)
+    end
+
     if method == "name" then
         table.sort(monitoredSpells,compare_by_name)
     elseif method == "cd" then
         table.sort(monitoredSpells,compare_by_cd)
-        -- for name,line in pairsByKeys(monitoredSpells,compare_by_cd) do
-        --     print("Name: ",name,"Line: ",line)
-        --     --printTable(line)
-        -- end
     elseif method == "spell id" then
         table.sort(monitoredSpells,compare_by_spell_id)
     else
         print("Unknown sort method ",method)
     end
-    -- print("-----------")
-    -- print("After: ")
-    -- printTable(monitoredSpells)
-    -- print("-----------")
+
+    update_icons = true
+    
+    if debug_print == true then 
+        print("-----------")
+        print("After: ")
+        printTable(monitoredSpells)
+        print("-----------")
+    end
 end
 
 local function onTick()
@@ -698,7 +774,6 @@ local function onTick()
             -- Else we are still running. 
         end
     end
-    -- print("Tick: ",GetTime())
     if learning_mode == true then
         get_all_spells_with_cd_over_threshold()
     end
@@ -750,6 +825,9 @@ end
 local function onSpellUpdateCooldown()
     --filterSpellsWithCooldownGreaterThan30()
     -- updateTableText()
+    if debug_print == true then
+        print("This function (onSpellUpdateCooldown) is called but is empty.")
+    end
 end
 
 -- Register the event handlers
@@ -759,7 +837,6 @@ cooldownFrame:RegisterEvent("ACTIVE_TALENT_GROUP_CHANGED")
 cooldownFrame:RegisterEvent("TRAIT_TREE_CHANGED")
 --cooldownFrame:RegisterEvent("ACTIVE_COMBAT_CONFIG_CHANGED")
 --cooldownFrame:RegisterEvent("PLAYER_TALENT_UPDATE")
-
 
 -- Set the script for the OnEvent event of 'cooldownFrame'
 cooldownFrame:SetScript("OnEvent", function(self, event, ...)
@@ -775,10 +852,9 @@ cooldownFrame:SetScript("OnEvent", function(self, event, ...)
         -- It takes 5 seconds to change talents, so wait to do the validation.
         C_Timer.After(6,validate_table_for_known_spells)
     else
-        print("Event: ",event)
+        if debug_print == true then print("Event: ",event) end
     end
 end)
-
 
 
 local function allow_frame_movement(bool_val)
@@ -878,8 +954,6 @@ local function CDT_Draw_Options()
         --   needs (which is setting the width enough that I am able to
         --   anchor relative to the dropdown without things getting weird).
 
-        -- print("Entry: ",entry.spellName," | ",entry.classification)
-
         local options = {
             {text = "Offensive", value = "offensive"},
             {text = "Defensive", value = "defensive"},
@@ -911,22 +985,16 @@ local function CDT_Draw_Options()
         blacklistButton:SetText("Blacklist")
         blacklistButton:SetScript("OnClick", function()
             blacklist_add_by_id(entry.spellID)
-            print("CooldownTracker: ",entry.spellName .. " has been blacklisted.")
+            if debug_print == true then 
+                print("CooldownTracker: ",entry.spellName .. " has been blacklisted.")
+            end
             CDT_Draw_Options()
         end)
 
         offset = offset + y_size
     end
 
-    -- Size versus actual size is getting to be annoying.
-    -- CooldownTrackerListContent:SetSize(400, offset)--offset/y_size*(y_size+y_pad))
-    -- CDTList:SetSize(CooldownTrackerListContent:GetWidth(),CooldownTrackerListContent:GetHeight())
-
-
     -- ========================================================================
-    -- if true then
-    print("Main Draw")
-
     local BLList = CreateFrame("ScrollFrame", "BlacklistListFrame", CDTOptions, "UIPanelScrollFrameTemplate")
     BLList:SetSize(CDTList:GetWidth(), CDTList:GetHeight()*1/2)
     BLList:SetPoint("TOPLEFT", CDTList, "BOTTOMLEFT", 0, 0)
@@ -985,7 +1053,9 @@ local function CDT_Draw_Options()
             unblacklistButton:SetText("Un-Blacklist")
             unblacklistButton:SetScript("OnClick", function()
                 blacklist_remove_by_id(entry.spellID)
-                print("CooldownTracker: ",entry.spellName .. " has been un-blacklisted.")
+                if debug_print == true then 
+                    print("CooldownTracker: ",entry.spellName .. " has been un-blacklisted.")
+                end
                 CDT_Draw_Options()
             end)
     
@@ -993,8 +1063,6 @@ local function CDT_Draw_Options()
         end
     end    
     PopulateBlacklistTable()
-
-    -- BlacklistContent:SetSize(400, offset)--offset/y_size*(y_size+y_pad))
 
     if false then 
         BLList:SetSize(400,offset/y_size*(y_size+y_pad))
@@ -1015,5 +1083,3 @@ end
 
 CDTOptions:SetScript("OnShow",CDT_Draw_Options)
 InterfaceOptions_AddCategory(CDTOptions)
-
-
