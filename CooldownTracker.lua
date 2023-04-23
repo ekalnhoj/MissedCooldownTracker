@@ -532,7 +532,15 @@ local function updateTableText()
                     make_orange = true
                 end
 
-                spNameText:SetText(sp_prev .. spellData.spellName .. "\n")
+                local spNameLen = string.len(spellData.spellName)
+                local spNameStr = ""
+                if spNameLen > 15 then
+                    spNameStr = string.format("%.13s...",spellData.spellName)
+                else
+                    spNameStr = spellData.spellName
+                end
+
+                spNameText:SetText(sp_prev .. spNameStr .. "\n")
                 spcdText:SetText(cd_prev .. string.format("%d",spellData.cooldown) .. "\n")
                 spluText:SetText(lu_prev .. string.format("%d",sinceLastUsed) .. "\n")
                 if make_red == true then 
@@ -969,6 +977,7 @@ local function CDT_Draw_Options()
                 
                 info.func = function(self)
                     entry.classification = option.value
+                    update_icons = true
                     UIDropDownMenu_SetSelectedValue(dropdown, entry.classification)
                     UIDropDownMenu_SetText(dropdown,classification_options_to_str[entry.classification])
                 end
