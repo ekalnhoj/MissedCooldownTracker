@@ -10,6 +10,7 @@ local icon_file_id_to_path = {}
 local periodic_save = true
 local track_threshold = 30
 local learning_mode = true
+local str_max_disp_len = 17
 
 -- Some initialization.
 local initialized = 0
@@ -530,11 +531,8 @@ local function updateTableText()
         title_row = rows["title_offensive"]
     end
     
-    print("Row: ",title_row.row)
     title_row.row:SetPoint("TOPLEFT",cooldownFrame,"TOPLEFT",0,-y_offset)
     y_offset = y_offset + y_size+y_pad
-    print("CDT: ",cooldownFrame:GetRect())
-    print("Rect 1: ",title_row.row:GetRect())
 
     for i, spellData in ipairs(monitoredSpells) do
         -- Only need to check if it's known here because the defensive_spells and crowd_control_spells tables are set here.
@@ -554,12 +552,7 @@ local function updateTableText()
                 else
                     curr_row = rows[spellData.spellID]
                 end
-                
-                print("Offset: ",-y_offset," Row: ",curr_row)
-                print("Rect: ",curr_row.row:GetRect())
                 curr_row.row:SetPoint("TOPLEFT",cooldownFrame,"TOPLEFT",0,-y_offset)
-                -- print("Offset: ",-y_offset)
-                -- print("Rect: ",curr_row.row:GetRect())
 
                 local sinceLastUsed = GetTime() - spellData.lastUsed
                 local mc = sinceLastUsed / spellData.cooldown
@@ -575,8 +568,9 @@ local function updateTableText()
                 local spNameLen = string.len(spellData.spellName)
                 local spNameStr = ""
                 local mcStr = ""
-                if spNameLen > 15 then
-                    spNameStr = string.format("%.13s...",spellData.spellName)
+                if spNameLen > str_max_disp_len then
+                    local spNameStr_trunc = string.sub(spellData.spellName,1,str_max_disp_len-3)
+                    spNameStr = string.format("%s...",spNameStr_trunc)
                 else
                     spNameStr = spellData.spellName
                 end
@@ -649,8 +643,9 @@ local function updateTableText()
 
                 local spNameLen = string.len(spellData.spellName)
                 local spNameStr = ""
-                if spNameLen > 15 then
-                    spNameStr = string.format("%.13s...",spellData.spellName)
+                if spNameLen > str_max_disp_len then
+                    local spNameStr_trunc = string.sub(spellData.spellName,1,str_max_disp_len-3)
+                    spNameStr = string.format("%s...",spNameStr_trunc)
                 else
                     spNameStr = spellData.spellName
                 end
@@ -722,8 +717,9 @@ local function updateTableText()
 
                 local spNameLen = string.len(spellData.spellName)
                 local spNameStr = ""
-                if spNameLen > 15 then
-                    spNameStr = string.format("%.13s...",spellData.spellName)
+                if spNameLen > str_max_disp_len then
+                    local spNameStr_trunc = string.sub(spellData.spellName,1,str_max_disp_len-3)
+                    spNameStr = string.format("%s...",spNameStr_trunc)
                 else
                     spNameStr = spellData.spellName
                 end
