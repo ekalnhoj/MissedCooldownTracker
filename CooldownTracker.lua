@@ -11,9 +11,13 @@ local periodic_save = true
 local track_threshold = 30
 local learning_mode = true
 
+-- Some initialization.
+local initialized = 0
+
 local debug_print = false
 local debug_print_tab = {}
 
+local n_rows = 0
 
 -- Create a new frame named 'CooldownTrackerFrame' with a size of 300x400
 local cooldownFrame = CreateFrame("Frame", "CooldownTrackerFrame", UIParent, "BackdropTemplate")
@@ -71,44 +75,7 @@ if true then
     end)
 end
 
--- Create a new font string named 'spNameText' inside 'cooldownFrame'
-local spNameText = cooldownFrame:CreateFontString(nil, "OVERLAY", "GameFontNormal") -- spell name 
-local spcdText = cooldownFrame:CreateFontString(nil, "OVERLAY", "GameFontNormal") -- spell cooldown (max cd)
-local spluText = cooldownFrame:CreateFontString(nil, "OVERLAY", "GameFontNormal") -- spell last used (seconds ago)
-local mcText = cooldownFrame:CreateFontString(nil, "OVERLAY", "GameFontNormal") -- missed uses (turns red when it hits 2)
--- Set the position of 'spNameText' relative to the top left corner of 'cooldownFrame'
-spNameText:SetPoint("TOPLEFT", 40, -20)
-spcdText:SetPoint("TOPLEFT", 140, -20) -- Depends on the width you set below I think
-spluText:SetPoint("TOPLEFT", 180, -20) -- Depends on the width you set below I think
-mcText:SetPoint("TOPLEFT", 220, -20) -- Depends on the width you set below I think
--- Set the horizontal alignment of the text to the left
-spNameText:SetJustifyH("LEFT")
-spcdText:SetJustifyH("RIGHT")
-spluText:SetJustifyH("RIGHT")
-mcText:SetJustifyH("RIGHT")
--- Set the vertical alignment of the text to the top
-spNameText:SetJustifyV("TOP")
-spcdText:SetJustifyV("TOP")
-spluText:SetJustifyV("TOP")
-mcText:SetJustifyV("TOP")
--- Set the width and height of 'spNameText'
-spNameText:SetWidth(120)
-spNameText:SetHeight(360)
-
-spcdText:SetWidth(40)
-spcdText:SetHeight(360)
-
-spluText:SetWidth(40)
-spluText:SetHeight(360)
-
-mcText:SetWidth(40)
-mcText:SetHeight(360)
-
-
-local spellIconFrame = CreateFrame("Frame","SpellIconHolderFrame",cooldownFrame)
-spellIconFrame:SetPoint("TOPRIGHT",spNameText,"TOPLEFT",0,offset)
-spellIconFrame:SetSize(20,spNameText:GetHeight())
-spellIconTextures = {}
+local rows = {}
 local update_icons = true
 
 -- A "total missed casts" text box might be useful, but not necessary atm.
@@ -118,14 +85,7 @@ classification_options_to_str["offensive"] ="Offensive"
 classification_options_to_str["defensive"] ="Defensive"
 classification_options_to_str["crowd_control"] ="Crowd Control"
 
--- Some initialization.
-local lastUseTime_default = 0
-local tableTextStr = ""
 
--- local sl = {} -- Table to store filtered spells
--- local bl = {} -- Table to store spells to ignore (e.g. Revive Battle Pets)
-
-local initialized = 0
 
 
 function save_spelllist()
@@ -192,14 +152,7 @@ local function startup()
 end
 
 
-
-
 -- ========================================================================
-
-
-
-
-
 -- ========================================================================
 function load_table(table_name)
     if table_name == nil then table_name = "monitoredSpells" end
@@ -307,6 +260,27 @@ function printTable(t, indent)
     end
 end
 
+function printTable_keys(t, indent)
+    indent = indent or 0
+    if t ~= nil then
+        for k,entry in pairs(t) do
+            if type(entry) == "table" then
+                print(string.rep("  ", indent) .. k .. ":")
+                printTable_keys(entry, indent + 1)
+            else
+                print(string.rep("  ", indent) .. k .. ": " .. tostring(entry))
+            end
+        end
+    else
+        print("nil")
+    end
+end
+
+local function function_of_the_day()
+    print("Length of rows: ",#rows)
+    printTable_keys(rows)
+end
+
 -- Slash command function
 local function slashCommandHandler(msg)
     if msg == "print" then
@@ -335,6 +309,8 @@ local function slashCommandHandler(msg)
         learning_mode = false
     elseif msg == "validate" then
         validate_table_for_known_spells()
+    elseif msg == "other" then
+        function_of_the_day()
     else
         print("Unknown slash command: ",msg)
     end
@@ -475,51 +451,190 @@ function blacklist_remove_by_id(spellID)
     update_icons = true
 end
 
+local function make_table_row(parent,y_offset)
+    y_offset = y_offset or 0
+    local y_size = 12
+    local y_pad = 2
+    local x_size_unit = 40
+    local x_pad = 2
+    -- Total width is icon width (y_size) plus spell name width (3x normal size)
+    --   plus the cooldown, last-used, and missed casts widths (1x normal size) 
+    --   plus padding for each.
+    local x_size_total = y_size + 3*x_size_unit + x_pad + 3*(x_size_unit+x_pad)
+
+    n_rows = n_rows+1
+    local the_row = CreateFrame("Frame","row_"..n_rows,parent)
+    the_row:SetSize(x_size_total,y_size)
+    the_row:Show()
+
+    -- First make the spell icon
+    local x_offset = 20
+    local the_icon = the_row:CreateTexture(nil,"ARTWORK")
+    the_icon:SetSize(y_size,y_size)
+    the_icon:SetPoint("LEFT",x_offset,0)
+    the_icon:Show()
+    x_offset = x_offset + y_size+x_pad
+
+    -- Next, the strings
+    local spName_str = the_row:CreateFontString(nil,"OVERLAY","GameFontNormal")
+    local spCD_str = the_row:CreateFontString(nil,"OVERLAY","GameFontNormal")
+    local spLU_str = the_row:CreateFontString(nil,"OVERLAY","GameFontNormal")
+    local spMC_str = the_row:CreateFontString(nil,"OVERLAY","GameFontNormal")
+
+    spName_str:SetPoint("LEFT",the_row,"LEFT",x_offset,0)
+    spCD_str:SetPoint("LEFT",spName_str,"RIGHT",x_pad,0)
+    spLU_str:SetPoint("LEFT",spCD_str,"RIGHT",x_pad,0)
+    spMC_str:SetPoint("LEFT",spLU_str,"RIGHT",x_pad,0)
+
+    spName_str:SetJustifyH("LEFT")
+    spCD_str:SetJustifyH("RIGHT")
+    spLU_str:SetJustifyH("RIGHT")
+    spMC_str:SetJustifyH("RIGHT")
+
+    spName_str:SetWidth(x_size_unit*3)
+    spCD_str:SetWidth(x_size_unit)
+    spLU_str:SetWidth(x_size_unit)
+    spMC_str:SetWidth(x_size_unit)
+
+    local row_container = {row=the_row,icon=the_icon,spName=spName_str,spCD=spCD_str,spLU=spLU_str,spMC=spMC_str}
+    -- print("Row container: ",row_container)
+    -- printTable_keys(row_container)
+    -- print("Row: ",the_row)
+    return row_container
+end
+
 
 -- Function to update the display text of 'spNameText'
 local function updateTableText()
     if not monitoredSpells then return end
 
-    -- Icon upkeeps
-    local y_size = 11.6  -- I don't know. This seems to work.
-    local offset = y_size
-
-    if update_icons == true then
-        for i, child in ipairs({spellIconFrame:GetChildren()}) do
-            child:Hide()
-            child:SetParent(nil)
-        end
-        for i,tex in ipairs(spellIconTextures) do
-            tex:Hide()
-            tex:SetTexture(nil)
-        end
-    end
-
-    -- Clear the current text
-    spNameText:SetText(string.format("|cFFFFFFFFSpell Name|r\n"))
-    spcdText:SetText(string.format("|cFFFFFFFFCD|r\n"))
-    spluText:SetText(string.format("|cFFFFFFFFSLU|r\n"))
-    mcText:SetText(string.format("|cFFFFFFFFMC|r\n"))
-
     -- This might should be its own table but for now it's not.
     local defensive_spells = {}
     local crowd_control_spells = {}
 
+    local y_size = 12
+    local y_pad = 4
+    local y_offset = y_size
+
     -- Iterate over the filtered spells and add them to the text
+    local title_row = nil
+    -- print("rows.title_offensive = ",rows["title_offensive"])
+    if rows["title_offensive"] == nil then
+        title_row = make_table_row(cooldownFrame)
+        title_row.spName:SetText(string.format("|cFFFFFFFFOffensive Spells|r"))
+        title_row.spCD:SetText(string.format("|cFFFFFFFFCD|r"))
+        title_row.spLU:SetText(string.format("|cFFFFFFFFLU|r"))
+        title_row.spMC:SetText(string.format("|cFFFFFFFFMC|r"))
+        rows["title_offensive"] = title_row
+    else
+        title_row = rows["title_offensive"]
+    end
+    
+    print("Row: ",title_row.row)
+    title_row.row:SetPoint("TOPLEFT",cooldownFrame,"TOPLEFT",0,-y_offset)
+    y_offset = y_offset + y_size+y_pad
+    print("CDT: ",cooldownFrame:GetRect())
+    print("Rect 1: ",title_row.row:GetRect())
+
     for i, spellData in ipairs(monitoredSpells) do
         -- Only need to check if it's known here because the defensive_spells and crowd_control_spells tables are set here.
         --   If that changes, then you'll have to add the logic below.
+
         if spellData.is_known == true then
             if spellData.classification == "defensive" then
                 table.insert(defensive_spells,spellData)
             elseif spellData.classification == "crowd_control" then
                 table.insert(crowd_control_spells,spellData)
             else
-                -- Add the formatted line to the previous lines.
-                local sp_prev = spNameText:GetText()
-                local cd_prev = spcdText:GetText()
-                local lu_prev = spluText:GetText()
-                local mc_prev = mcText:GetText()
+                -- Get the table row. First check if it exists.
+                local curr_row = nil
+                if rows[spellData.spellID] == nil then
+                    curr_row = make_table_row(cooldownFrame)
+                    rows[spellData.spellID] = curr_row
+                else
+                    curr_row = rows[spellData.spellID]
+                end
+                
+                print("Offset: ",-y_offset," Row: ",curr_row)
+                print("Rect: ",curr_row.row:GetRect())
+                curr_row.row:SetPoint("TOPLEFT",cooldownFrame,"TOPLEFT",0,-y_offset)
+                -- print("Offset: ",-y_offset)
+                -- print("Rect: ",curr_row.row:GetRect())
+
+                local sinceLastUsed = GetTime() - spellData.lastUsed
+                local mc = sinceLastUsed / spellData.cooldown
+                local make_red = false
+                local make_orange = false
+                if mc >= 2 then
+                    make_red = true
+                end
+                if mc >= 1 then
+                    make_orange = true
+                end
+
+                local spNameLen = string.len(spellData.spellName)
+                local spNameStr = ""
+                local mcStr = ""
+                if spNameLen > 15 then
+                    spNameStr = string.format("%.13s...",spellData.spellName)
+                else
+                    spNameStr = spellData.spellName
+                end
+                if make_red == true then 
+                    mcStr = string.format("|cFFFF0000%d|r",mc)
+                elseif make_orange == true then
+                    mcStr = string.format("|cFFFFA500%d|r",mc)
+                else
+                    mcStr = string.format("%d",mc)
+                end
+
+                if spellData.spellIcon_filePath ~= nil then
+                    curr_row.icon:SetTexture(spellData.spellIcon_filePath)
+                end
+                curr_row.spName:SetText(spNameStr)
+                curr_row.spCD:SetText(string.format("%d",spellData.cooldown))
+                curr_row.spLU:SetText(string.format("%d",sinceLastUsed))
+                curr_row.spMC:SetText(mcStr)
+                
+                y_offset = y_offset+y_size+y_pad
+            end
+        end
+    end
+
+    -- ======
+    if #defensive_spells > 0 then
+        y_offset = y_offset + 3*y_size
+
+        local title_row = nil
+        if rows["title_defensive"] == nil then
+            title_row = make_table_row(cooldownFrame)
+            title_row.spName:SetText(string.format("|cFFFFFFFFDefensive Spells|r"))
+            title_row.spCD:SetText(string.format("|cFFFFFFFFCD|r"))
+            title_row.spLU:SetText(string.format("|cFFFFFFFFLU|r"))
+            title_row.spMC:SetText(string.format("|cFFFFFFFFMC|r"))
+            rows["title_defensive"] = title_row
+        else
+            title_row = rows["title_defensive"]
+        end
+
+        title_row.row:SetPoint("TOPLEFT",cooldownFrame,"TOPLEFT",0,-y_offset)
+        y_offset = y_offset + y_size+y_pad
+        -- print("Rect 2: ",title_row.row:GetRect())
+
+        for i, spellData in ipairs(defensive_spells) do
+            -- Only need to check if it's known here because the defensive_spells and crowd_control_spells tables are set here.
+            --   If that changes, then you'll have to add the logic below.
+            if spellData.is_known == true then
+                -- Get the table row. First check if it exists.
+                local curr_row = nil
+                if rows[spellData.spellID] == nil then
+                    curr_row = make_table_row(cooldownFrame)
+                    rows[spellData.spellID] = curr_row
+                else
+                    curr_row = rows[spellData.spellID]
+                end
+
+                curr_row.row:SetPoint("TOPLEFT",cooldownFrame,"TOPLEFT",0,-y_offset)
 
                 local sinceLastUsed = GetTime() - spellData.lastUsed
                 local mc = sinceLastUsed / spellData.cooldown
@@ -539,115 +654,60 @@ local function updateTableText()
                 else
                     spNameStr = spellData.spellName
                 end
-
-                spNameText:SetText(sp_prev .. spNameStr .. "\n")
-                spcdText:SetText(cd_prev .. string.format("%d",spellData.cooldown) .. "\n")
-                spluText:SetText(lu_prev .. string.format("%d",sinceLastUsed) .. "\n")
                 if make_red == true then 
-                    mcText:SetText(mc_prev .. string.format("|cFFFF0000%d|r",mc) .. "\n")
+                    mcStr = string.format("|cFFFF0000%d|r",mc)
                 elseif make_orange == true then
-                    mcText:SetText(mc_prev .. string.format("|cFFFFA500%d|r",mc) .. "\n")
+                    mcStr = string.format("|cFFFFA500%d|r",mc)
                 else
-                    mcText:SetText(mc_prev .. string.format("%d",mc) .. "\n")
+                    mcStr = string.format("%d",mc)
                 end
 
-                if update_icons == true then
-                    if spellData.spellIcon_filePath ~= nil then
-                        local tempSpellIcon = spellIconFrame:CreateTexture(nil,"ARTWORK")
-                        tempSpellIcon:SetTexture(spellData.spellIcon_filePath)
-                        tempSpellIcon:SetSize(y_size,y_size)
-                        tempSpellIcon:SetPoint("TOPRIGHT",spNameText,"TOPLEFT",-5,-offset)
-                        tempSpellIcon:Show()
-                        table.insert(spellIconTextures,tempSpellIcon)
-                    end
+                if spellData.spellIcon_filePath ~= nil then
+                    curr_row.icon:SetTexture(spellData.spellIcon_filePath)
                 end
-                offset = offset+y_size
-            end
-        end
-    end
+                curr_row.spName:SetText(spNameStr)
+                curr_row.spCD:SetText(string.format("%d",spellData.cooldown))
+                curr_row.spLU:SetText(string.format("%d",sinceLastUsed))
+                curr_row.spMC:SetText(mcStr)
 
-    if #defensive_spells > 0 then
-        local sp_prev = spNameText:GetText()
-        local cd_prev = spcdText:GetText()
-        local lu_prev = spluText:GetText()
-        local mc_prev = mcText:GetText()
-
-        spNameText:SetText(sp_prev .. string.format("\n\n|cFFFFFFFFDefensive Spells|r\n"))
-        spcdText:SetText(cd_prev .. string.format("\n\n|cFFFFFFFFCD|r\n"))
-        spluText:SetText(lu_prev .. string.format("\n\n|cFFFFFFFFSLU|r\n"))
-        mcText:SetText(mc_prev .. string.format("\n\n|cFFFFFFFFMC|r\n"))
-
-        offset = offset+3*y_size -- number of newlines
-
-        for i, spellData in ipairs(defensive_spells) do
-            if false then
-                -- Nothing but it looks symmetrical this way 
-            else
-                -- Add the formatted line to the previous lines.
-                local sp_prev = spNameText:GetText()
-                local cd_prev = spcdText:GetText()
-                local lu_prev = spluText:GetText()
-                local mc_prev = mcText:GetText()
-
-                local sinceLastUsed = GetTime() - spellData.lastUsed
-                local mc = sinceLastUsed / spellData.cooldown
-                local make_red = false
-                local make_orange = false
-                if mc >= 2 then
-                    make_red = true
-                end
-                if mc >= 1 then
-                    make_orange = true
-                end
-
-                spNameText:SetText(sp_prev .. spellData.spellName .. "\n")
-                spcdText:SetText(cd_prev .. string.format("%d",spellData.cooldown) .. "\n")
-                spluText:SetText(lu_prev .. string.format("%d",sinceLastUsed) .. "\n")
-                if make_red == true then 
-                    mcText:SetText(mc_prev .. string.format("|cFFFF0000%d|r",mc) .. "\n")
-                elseif make_orange == true then
-                    mcText:SetText(mc_prev .. string.format("|cFFFFA500%d|r",mc) .. "\n")
-                else
-                    mcText:SetText(mc_prev .. string.format("%d",mc) .. "\n")
-                end
-
-                if update_icons == true then
-                    if spellData.spellIcon_filePath ~= nil then
-                        local tempSpellIcon = spellIconFrame:CreateTexture(nil,"ARTWORK")
-                        tempSpellIcon:SetTexture(spellData.spellIcon_filePath)
-                        tempSpellIcon:SetSize(y_size,y_size)
-                        tempSpellIcon:SetPoint("TOPRIGHT",spNameText,"TOPLEFT",-5,-offset)
-                        tempSpellIcon:Show()
-                        table.insert(spellIconTextures,tempSpellIcon)
-                    end
-                end
-                offset = offset+y_size
+                y_offset = y_offset+y_size+y_pad
             end
         end
     end
 
     if #crowd_control_spells > 0 then
-        local sp_prev = spNameText:GetText()
-        local cd_prev = spcdText:GetText()
-        local lu_prev = spluText:GetText()
-        local mc_prev = mcText:GetText()
+        y_offset = y_offset + 3*y_size
 
-        spNameText:SetText(sp_prev .. string.format("\n\n|cFFFFFFFFUtility Spells|r\n"))
-        spcdText:SetText(cd_prev .. string.format("\n\n|cFFFFFFFFCD|r\n"))
-        spluText:SetText(lu_prev .. string.format("\n\n|cFFFFFFFFSLU|r\n"))
-        mcText:SetText(mc_prev .. string.format("\n\n|cFFFFFFFFMC|r\n"))
+        local title_row = nil
+        if rows["title_crowd_control"] == nil then
+            title_row = make_table_row(cooldownFrame)
+            title_row.spName:SetText(string.format("|cFFFFFFFFUtility Spells|r"))
+            title_row.spCD:SetText(string.format("|cFFFFFFFFCD|r"))
+            title_row.spLU:SetText(string.format("|cFFFFFFFFLU|r"))
+            title_row.spMC:SetText(string.format("|cFFFFFFFFMC|r"))
+            rows["title_crowd_control"] = title_row
+        else
+            title_row = rows["title_crowd_control"]
+        end
 
-        offset = offset+3*y_size -- Number of newlines
+        title_row.row:SetPoint("TOPLEFT",cooldownFrame,"TOPLEFT",0,-y_offset)
+        y_offset = y_offset + y_size+y_pad
+        -- print("Rect 3: ",title_row.row:GetRect())
 
         for i, spellData in ipairs(crowd_control_spells) do
-            if false then 
-                -- Nothing but it looks symmetrical this way
-            else
-                -- Add the formatted line to the previous lines.
-                local sp_prev = spNameText:GetText()
-                local cd_prev = spcdText:GetText()
-                local lu_prev = spluText:GetText()
-                local mc_prev = mcText:GetText()
+            -- Only need to check if it's known here because the defensive_spells and crowd_control_spells tables are set here.
+            --   If that changes, then you'll have to add the logic below.
+            if spellData.is_known == true then
+                -- Get the table row. First check if it exists.
+                local curr_row = nil
+                if rows[spellData.spellID] == nil then
+                    curr_row = make_table_row(cooldownFrame)
+                    rows[spellData.spellID] = curr_row
+                else
+                    curr_row = rows[spellData.spellID]
+                end
+
+                curr_row.row:SetPoint("TOPLEFT",cooldownFrame,"TOPLEFT",0,-y_offset)
 
                 local sinceLastUsed = GetTime() - spellData.lastUsed
                 local mc = sinceLastUsed / spellData.cooldown
@@ -660,34 +720,35 @@ local function updateTableText()
                     make_orange = true
                 end
 
-                spNameText:SetText(sp_prev .. spellData.spellName .. "\n")
-                spcdText:SetText(cd_prev .. string.format("%d",spellData.cooldown) .. "\n")
-                spluText:SetText(lu_prev .. string.format("%d",sinceLastUsed) .. "\n")
-                if make_red == true then 
-                    mcText:SetText(mc_prev .. string.format("|cFFFF0000%d|r",mc) .. "\n")
-                elseif make_orange == true then
-                    mcText:SetText(mc_prev .. string.format("|cFFFFA500%d|r",mc) .. "\n")
+                local spNameLen = string.len(spellData.spellName)
+                local spNameStr = ""
+                if spNameLen > 15 then
+                    spNameStr = string.format("%.13s...",spellData.spellName)
                 else
-                    mcText:SetText(mc_prev .. string.format("%d",mc) .. "\n")
+                    spNameStr = spellData.spellName
+                end
+                if make_red == true then 
+                    mcStr = string.format("|cFFFF0000%d|r",mc)
+                elseif make_orange == true then
+                    mcStr = string.format("|cFFFFA500%d|r",mc)
+                else
+                    mcStr = string.format("%d",mc)
                 end
 
-                if update_icons == true then
-                    if spellData.spellIcon_filePath ~= nil then
-                        local tempSpellIcon = spellIconFrame:CreateTexture(nil,"ARTWORK")
-                        tempSpellIcon:SetTexture(spellData.spellIcon_filePath)
-                        tempSpellIcon:SetSize(y_size,y_size)
-                        tempSpellIcon:SetPoint("TOPRIGHT",spNameText,"TOPLEFT",-5,-offset)
-                        tempSpellIcon:Show()
-                        table.insert(spellIconTextures,tempSpellIcon)
-                    end
+                if spellData.spellIcon_filePath ~= nil then
+                    curr_row.icon:SetTexture(spellData.spellIcon_filePath)
                 end
-                offset = offset+y_size
+                curr_row.spName:SetText(spNameStr)
+                curr_row.spCD:SetText(string.format("%d",spellData.cooldown))
+                curr_row.spLU:SetText(string.format("%d",sinceLastUsed))
+                curr_row.spMC:SetText(mcStr)
+
+                y_offset = y_offset+y_size+y_pad
+
             end
         end
     end
-    update_icons = false
 end
-
 
 
 -- Function to update spell cooldowns
@@ -908,7 +969,7 @@ local function CDT_Draw_Options()
     -- Make some titles for the table up top
     local monitoredSpellsIconTitle = CooldownTrackerListContent:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     monitoredSpellsIconTitle:SetPoint("TOPLEFT", 0, 0)
-    monitoredSpellsIconTitle:SetText("I") -- I just want it invisible I think
+    monitoredSpellsIconTitle:SetText("") -- I just want it invisible I think
     monitoredSpellsIconTitle:SetTextColor(1, 1, 1)
     monitoredSpellsIconTitle:SetSize(y_size,y_size)
 
@@ -1014,7 +1075,7 @@ local function CDT_Draw_Options()
 
     local blacklistIconTitle = BlacklistContent:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     blacklistIconTitle:SetPoint("TOPLEFT", 0, 0)
-    blacklistIconTitle:SetText("I") -- I just want it invisible I think
+    blacklistIconTitle:SetText("") -- I just want it invisible I think
     blacklistIconTitle:SetTextColor(1, 1, 1)
     blacklistIconTitle:SetSize(y_size,y_size)
 
