@@ -1,11 +1,6 @@
 -- Next steps: 
 --   Options UI blacklist by Spell ID.
 --   Options UI whitelist spells.
---   Options in options pane:
---     tick frequency
---     tracking threshold
---     string max display length
---   Resizing tracker window
 --   Spells with charges (e.g. evoker Obsidian Scales)
 
 local icon_file_id_to_path = {}
@@ -470,7 +465,7 @@ local function slashCommandHandler(msg)
     elseif msg == "learning_mode false" then
         learning_mode = false
     elseif msg == "validate" then
-        validate_table_for_known_spells()
+        validate_table_for_params()
     elseif msg == "other" then
         function_of_the_day()
     else
@@ -510,6 +505,21 @@ local function get_all_spells_with_cd_over_threshold()
                 if spellID == entry.spellID then is_in_table = 1 end
             end
 
+            for i,entry in ipairs(monitoredSpells) do
+                if entry.has_charges == nil or entry.max_charges == nil then
+                    local has_charges = nil
+                    local max_charges = 1
+                    if GetSpellCharges(spellID) == nil then 
+                        has_charges = false 
+                    else
+                        has_charges = true
+                        _,max_charges,_,duration,_ = GetSpellCharges(spellID)
+                    end
+                    entry.has_charges = has_charges
+                    entry.max_charges = max_charges
+                end
+            end
+
             local spellIcon_filePath = nil
             if spellIcon ~= nil then 
                 spellIcon_filePath = icon_file_id_to_path[spellIcon]
@@ -523,10 +533,20 @@ local function get_all_spells_with_cd_over_threshold()
                 -- It's in the table; don't re-add it.
             else
                 local start, duration, enabled = GetSpellCooldown(spellID)
+
+                local has_charges = nil
+                local max_charges = 1
+                if GetSpellCharges(spellID) == nil then 
+                    has_charges = false 
+                else
+                    has_charges = true
+                    _,max_charges,_,duration,_ = GetSpellCharges(spellID)
+                end
+                
                 if duration and duration >= track_threshold then
                     -- Assuming it's an offensive spell until told otherwise.
                     -- is_known is probably how I'll handle different talent sets? Upon talent set swap it goes through the list and hides any spells not known.
-                    table.insert(monitoredSpells,{spellID=spellID, spellName=spellName, cooldown=duration, lastUsed=-1, spelIcon=spellIcon, spellIcon_filePath=spellIcon_filePath, classification="offensive", is_known=true})
+                    table.insert(monitoredSpells,{spellID=spellID, spellName=spellName, cooldown=duration, lastUsed=-1, spelIcon=spellIcon, spellIcon_filePath=spellIcon_filePath, classification="offensive", is_known=true, has_charges=has_charges, max_charges=max_charges})
                     sort_table("cd")
                     update_icons = true
                 else
@@ -538,10 +558,12 @@ local function get_all_spells_with_cd_over_threshold()
     if periodic_save == false then save_to_file() end
 end
 
-function validate_table_for_known_spells()
+function validate_table_for_params()
     if initialized == 0 then return end
     for i,entry in ipairs(monitoredSpells) do
         is_known_new = IsSpellKnown(entry.spellID)
+        -- Hacking in a way to validate for cd changes in addition to whether it's known.
+        if entry.cooldown < track_threshold then is_known_new = false end
         entry.is_known = is_known_new
     end
     update_icons = true
@@ -729,6 +751,20 @@ local function updateTableText()
 
                 local sinceLastUsed = GetTime() - spellData.lastUsed
                 local mc = sinceLastUsed / spellData.cooldown
+                -- if spellData.max_charges > 1 then
+                --     max_charges = spellData.max_charges
+                --     curr_charges,max_charges,_,cooldown,_ = GetSpellCharges(spellData.spellID)
+
+                --     if curr_charges < max_charges then 
+                --         mc = 0
+                --     else
+                --         -- We're at max charges. Things get complicated.                         
+                --         mc = (sinceLastUsed - cooldown*(max_charges-1)) / spellData.cooldown
+                --     end
+                --     if sinceLastUsed < 0 then sinceLastUsed = 0 end
+                -- else
+                --     mc = sinceLastUsed / spellData.cooldown
+                -- end
                 local make_red = false
                 local make_orange = false
                 if mc >= 2 then
@@ -924,15 +960,18 @@ end
 function updateCooldowns()
     if not monitoredSpells then return end
 
-    for _, spellData in ipairs(monitoredSpells) do        
+    for _, spellData in ipairs(monitoredSpells) do
         local spellName, _, spellIcon, spellCooldown = GetSpellInfo(spellData.spellID)
         local start, duration, enabled = GetSpellCooldown(spellData.spellID)
-
-        -- If the spell is on cooldown and its cooldown is longer than 30 seconds
-        if start ~= nil and duration > 1.5 and duration >= track_threshold then
-            -- Store the spell data in the monitoredSpells table
-            -- monitoredSpells[spellData.spellID].lastUsed = start -- GetTime() - start
-            spellData.lastUsed = start
+        if spellData.max_charges == 1 then
+            if start ~= nil and duration > 1.5 and duration >= track_threshold then
+                spellData.lastUsed = start
+            end
+        else
+            curr_charges,max_charges,last_cast,cooldown,_ = GetSpellCharges(spellData.spellID)
+            if curr_charges < max_charges and cooldown > 1.5 and cooldown >= track_threshold then
+                spellData.lastUsed = last_cast
+            end
         end
     end
 end
@@ -1087,10 +1126,10 @@ cooldownFrame:SetScript("OnEvent", function(self, event, ...)
         onSpellUpdateCooldown(...)
     elseif event == "ACTIVE_TALENT_GROUP_CHANGED" then
         load_table("monitoredSpells")
-        validate_table_for_known_spells()
+        validate_table_for_params()
     elseif event == "TRAIT_TREE_CHANGED" then 
         -- It takes 5 seconds to change talents, so wait to do the validation.
-        C_Timer.After(6,validate_table_for_known_spells)
+        C_Timer.After(6,validate_table_for_params)
     else
         if debug_print == true then print("Event: ",event) end
     end
@@ -1258,6 +1297,7 @@ function CDT_draw_vars()
         self:ClearFocus()
         cdt_opts.track_threshold = tonumber(self:GetText())
         options_push_vars()
+        validate_table_for_params()
     end)
     -- Create the label for the max display length edit box.
     local trackThresholdLabel = CdtVars_ListContent:CreateFontString(nil, "ARTWORK", "GameFontNormal")
