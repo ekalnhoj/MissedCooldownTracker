@@ -4,16 +4,46 @@
 --   Options in options pane:
 --     tick frequency
 --     tracking threshold
+--     string max display length
 --   Resizing tracker window
+--   Spells with charges (e.g. evoker Obsidian Scales)
 
 local icon_file_id_to_path = {}
-local periodic_save = true
-local track_threshold = 30
-local learning_mode = true
-local str_max_disp_len = 17
 
--- Some initialization.
+local learning_mode = true
+local periodic_save = true
+local show_frame = true -- NYI
+local frame_adjustability = "None"
+
+local tick_frequency = 0.5 -- seconds
+local track_threshold = 30 -- seconds
+local str_max_disp_len = 20 -- character length
+local sort_method = "cooldown"
+
+-- Some semi-hidden vars
+local coordinate_x = 10
+local coordinate_y = 600
+local size_x = 300
+local size_y = 400
+
+
+-- Some initialization (user prob shouldn't mess with stuff past here).
 local initialized = 0
+local is_running = true
+
+local rows = {}
+local update_icons = true
+
+local monitoredSpells
+local blacklist
+local cdt_opts
+
+-- A "total missed casts" text box might be useful, but not necessary atm.
+
+local classification_options_to_str = {}
+classification_options_to_str["offensive"] ="Offensive"
+classification_options_to_str["defensive"] ="Defensive"
+classification_options_to_str["utility"] ="Utility"
 
 local debug_print = false
 local debug_print_tab = {}
@@ -22,9 +52,9 @@ local n_rows = 0
 
 -- Create a new frame named 'CooldownTrackerFrame' with a size of 300x400
 local cooldownFrame = CreateFrame("Frame", "CooldownTrackerFrame", UIParent, "BackdropTemplate")
-cooldownFrame:SetSize(300, 400)
+-- cooldownFrame:SetSize(300, 400)
 -- Position the frame 10 pixels from the left of the screen
-cooldownFrame:SetPoint("LEFT", 10, 0)
+-- cooldownFrame:SetPoint("LEFT", 0, 10)
 -- Set the backdrop of the frame
 cooldownFrame:SetBackdrop({
     bgFile = "Interface\\DialogFrame\\UI-DialogBox-Background",
@@ -38,7 +68,7 @@ cooldownFrame:SetBackdropColor(0, 0, 0, 1)
 cooldownFrame:Show()
 
 -- Add a reset button to the bottom.
-if true then
+if true then -- Just making a code block
     -- Create a new frame for the button
     local resetButtonFrame = CreateFrame("Frame", "resetButtonFrame", cooldownFrame)
     resetButtonFrame:SetSize(150, 30)
@@ -57,8 +87,7 @@ if true then
 end
 
 -- Add a "pause" button to the bottom as well.
-local is_running = true
-if true then
+if true then -- Just making a code block
     -- Create a new frame for the button
     local pauseButtonFrame = CreateFrame("Frame", "pauseButtonFrame", cooldownFrame)
     pauseButtonFrame:SetSize(150, 30)
@@ -75,18 +104,6 @@ if true then
         toggle_ticking()
     end)
 end
-
-local rows = {}
-local update_icons = true
-
--- A "total missed casts" text box might be useful, but not necessary atm.
-
-local classification_options_to_str = {}
-classification_options_to_str["offensive"] ="Offensive"
-classification_options_to_str["defensive"] ="Defensive"
-classification_options_to_str["crowd_control"] ="Crowd Control"
-
-
 
 
 function save_spelllist()
@@ -116,6 +133,7 @@ function save_options()
     local addonName = "CooldownTracker"
     local savedVariables = _G[addonName.."DB"] or {}
     savedVariables.cdt_options = cdt_opts
+    savedVariables.cdt_options.frame_adjustability = "None"
     _G[addonName.."DB"] = savedVariables
 end
 
@@ -125,6 +143,90 @@ function save_to_file()
     save_options()
 end
 
+local function update_frame_info()
+    coordinate_x,coordinate_y,size_x,size_y = cooldownFrame:GetRect()
+    cdt_opts.coordinate_x = coordinate_x
+    cdt_opts.coordinate_y = coordinate_y
+    cdt_opts.size_x = size_x
+    cdt_opts.size_y = size_y
+end
+
+local function allow_frame_movement(bool_val,depth)
+    depth = depth or 1
+    if debug_print == true then print("Setting movable to ",bool_val) end
+
+    cooldownFrame:SetMovable(bool_val)
+    cooldownFrame:EnableMouse(bool_val)
+    if bool_val == true then
+        cooldownFrame:SetScript("OnMouseDown",function(self, button)
+            if button == "LeftButton" then 
+                self:StartMoving()
+            else
+                -- == Do nothing
+            end
+        end)
+        cooldownFrame:SetScript("OnMouseUp",function(self,button)
+            self:StopMovingOrSizing()
+            -- Grab the coordinates for saving
+            update_frame_info()
+        end)
+    end
+
+    -- I know there must be a way to make "exclusive turn it on" work but I'm failing. 
+    --   I'll just have to trust the user not to get into trouble.
+    -- if bool_val == true and depth <= 1 then
+    --     allow_frame_resizing(false,depth+1) -- Re-set moving options (seems to be needed?)
+    --     CDT_Draw_Options()
+    -- end
+end
+
+local function allow_frame_resizing(bool_val,depth)
+    depth = depth or 1
+    if debug_print == true then print("Setting sizable to ",bool_val) end
+
+    cooldownFrame:SetResizable(bool_val)
+    cooldownFrame:EnableMouse(bool_val)
+    if bool_val == true then
+        cooldownFrame:SetScript("OnMouseDown",function(self, button)
+            if button == "LeftButton" then 
+                self:StartSizing() -- defaults to bottom right
+            else
+                -- == Do nothing
+            end
+        end)
+        cooldownFrame:SetScript("OnMouseUp",function(self,button)
+            self:StopMovingOrSizing()
+            -- Grab the coordinates for saving
+            update_frame_info()
+        end)
+    end
+
+    -- I know there must be a way to make "exclusive turn it on" work but I'm failing. 
+    --   I'll just have to trust the user not to get into trouble.
+    -- if bool_val == true and depth <= 1 then
+    --     allow_frame_movement(false,depth+1) -- Re-set moving options (seems to be needed?)
+    --     CDT_Draw_Options()
+    -- end
+end
+
+local function adjust_changeability(new_status)
+    local new_status_lower = string.lower(new_status)
+    cdt_opts.frame_adjustability = new_status_lower
+    if new_status_lower == "movable" then
+        if debug_print == true then print("Movable") end
+        allow_frame_resizing(false)
+        allow_frame_movement(true)
+        
+    elseif new_status_lower == "resizable" then 
+        if debug_print == true then print("Resizable") end
+        allow_frame_movement(false)
+        allow_frame_resizing(true)
+    else
+        if debug_print == true then print("Neither movable or resizable") end
+        allow_frame_movement(false)
+        allow_frame_resizing(false)        
+    end
+end
 
 local function addon_loaded()
     load_table("monitoredSpells")
@@ -135,7 +237,13 @@ local function addon_loaded()
     --   ArtTextureID thing to be a global which feels bad but at least
     --   it works. 
     icon_file_id_to_path = _G["ArtTexturePaths"]
+
+    adjust_changeability("None")
+    cooldownFrame:SetSize(cdt_opts.size_x,cdt_opts.size_y)
+    cooldownFrame:SetPoint("BOTTOMLEFT", cdt_opts.coordinate_x, cdt_opts.coordinate_y)
+
     if debug_print == true then print("CooldownTracker ready to go.") end
+    initialized = 1
 end
 
 local function startup()
@@ -155,6 +263,29 @@ end
 
 -- ========================================================================
 -- ========================================================================
+local function options_push_vars()
+    learning_mode = cdt_opts.learning_mode
+    periodic_save = cdt_opts.periodic_save
+    frame_adjustability = cdt_opts.frame_adjustability
+    show_frame = cdt_opts.show_frame
+    tick_frequency = cdt_opts.tick_frequency
+    track_threshold = cdt_opts.track_threshold
+    str_max_disp_len = cdt_opts.str_max_disp_len
+    sort_method = cdt_opts.sort_method
+    coordinate_x = cdt_opts.coordinate_x
+    coordinate_y = cdt_opts.coordinate_y
+    size_x = cdt_opts.size_x
+    size_y = cdt_opts.size_y
+
+    if debug_print == true then 
+        print("Local vars loaded: ",
+            cdt_opts.coordinate_x,cdt_opts.coordinate_y,cdt_opts.size_x,cdt_opts.size_y,
+            learning_mode,periodic_save,frame_adjustability,show_frame,
+            tick_frequency,track_threshold,str_max_disp_len,sort_method
+        )
+    end
+end
+
 function load_table(table_name)
     if table_name == nil then table_name = "monitoredSpells" end
 
@@ -204,7 +335,6 @@ function load_table(table_name)
                 monitoredSpells = {}
             end
         end
-        initialized = 1
     elseif table_name == "blacklist" then
         -- Initialize if needed.
         if not blacklist then
@@ -224,23 +354,54 @@ function load_table(table_name)
             blacklist = CooldownTrackerDB.nixed_spells
         end
     elseif table_name == "cdt_options" then
+        local cdt_opts_default = {
+            learning_mode = true,
+            periodic_save = true,
+            frame_adjustability = "None",
+            show_frame = true, -- NYI
+            coordinate_x = 20,
+            coordinate_y = 600,
+            size_x = 300,
+            size_y = 400,
+
+            tick_frequency = 0.5, -- seconds
+            track_threshold = 30, -- seconds
+            str_max_disp_len = 20, -- character length
+            sort_method="cooldown"
+        }
         -- Initialize if needed.
         if not cdt_opts then
-            cdt_opts = {sort_method="cooldown"}
+            if debug_print == true then 
+                print("not cdt_opts")
+            end
+            cdt_opts = cdt_opts_default
         end
 
         -- Initialize table and subtable if they don't exist.
         if CooldownTrackerDB == nil then
+            if debug_print == true then 
+                print("DB was nil")
+            end
             CooldownTrackerDB = {}
         end
         if CooldownTrackerDB.cdt_options == nil then 
-            CooldownTrackerDB.cdt_options = {}
+            if debug_print == true then 
+                print("DB.cdt_options was nil")
+            end
+            CooldownTrackerDB.cdt_options = cdt_opts_default
         end
 
         -- Load the monitoredSpells table from the saved variable table
         if CooldownTrackerDB and CooldownTrackerDB.cdt_options then
+            if debug_print == true then 
+                print("Loading")
+            end
             cdt_opts = CooldownTrackerDB.cdt_options
         end
+
+        -- And load the local variables with these values.
+        adjust_changeability("Neither")
+        options_push_vars()
     end
     if debug_print == true then print("Loaded table ",table_name) end
 end
@@ -509,9 +670,21 @@ end
 local function updateTableText()
     if not monitoredSpells then return end
 
+    if update_icons == true then
+        -- Redraw the tables. First delete the old things.
+        -- Clear the frame
+        for k,row_entry in pairs(rows) do
+            for k2,row_component in pairs(row_entry) do
+                row_component:Hide()
+                row_component:SetParent(nil)
+            end
+        end
+        rows = {}
+    end
+
     -- This might should be its own table but for now it's not.
     local defensive_spells = {}
-    local crowd_control_spells = {}
+    local utility_spells = {}
 
     local y_size = 12
     local y_pad = 4
@@ -535,14 +708,14 @@ local function updateTableText()
     y_offset = y_offset + y_size+y_pad
 
     for i, spellData in ipairs(monitoredSpells) do
-        -- Only need to check if it's known here because the defensive_spells and crowd_control_spells tables are set here.
+        -- Only need to check if it's known here because the defensive_spells and utility_spells tables are set here.
         --   If that changes, then you'll have to add the logic below.
 
         if spellData.is_known == true then
             if spellData.classification == "defensive" then
                 table.insert(defensive_spells,spellData)
-            elseif spellData.classification == "crowd_control" then
-                table.insert(crowd_control_spells,spellData)
+            elseif spellData.classification == "utility" then
+                table.insert(utility_spells,spellData)
             else
                 -- Get the table row. First check if it exists.
                 local curr_row = nil
@@ -616,7 +789,7 @@ local function updateTableText()
         -- print("Rect 2: ",title_row.row:GetRect())
 
         for i, spellData in ipairs(defensive_spells) do
-            -- Only need to check if it's known here because the defensive_spells and crowd_control_spells tables are set here.
+            -- Only need to check if it's known here because the defensive_spells and utility_spells tables are set here.
             --   If that changes, then you'll have to add the logic below.
             if spellData.is_known == true then
                 -- Get the table row. First check if it exists.
@@ -670,27 +843,27 @@ local function updateTableText()
         end
     end
 
-    if #crowd_control_spells > 0 then
+    if #utility_spells > 0 then
         y_offset = y_offset + 3*y_size
 
         local title_row = nil
-        if rows["title_crowd_control"] == nil then
+        if rows["title_utility"] == nil then
             title_row = make_table_row(cooldownFrame)
             title_row.spName:SetText(string.format("|cFFFFFFFFUtility Spells|r"))
             title_row.spCD:SetText(string.format("|cFFFFFFFFCD|r"))
             title_row.spLU:SetText(string.format("|cFFFFFFFFLU|r"))
             title_row.spMC:SetText(string.format("|cFFFFFFFFMC|r"))
-            rows["title_crowd_control"] = title_row
+            rows["title_utility"] = title_row
         else
-            title_row = rows["title_crowd_control"]
+            title_row = rows["title_utility"]
         end
 
         title_row.row:SetPoint("TOPLEFT",cooldownFrame,"TOPLEFT",0,-y_offset)
         y_offset = y_offset + y_size+y_pad
         -- print("Rect 3: ",title_row.row:GetRect())
 
-        for i, spellData in ipairs(crowd_control_spells) do
-            -- Only need to check if it's known here because the defensive_spells and crowd_control_spells tables are set here.
+        for i, spellData in ipairs(utility_spells) do
+            -- Only need to check if it's known here because the defensive_spells and utility_spells tables are set here.
             --   If that changes, then you'll have to add the logic below.
             if spellData.is_known == true then
                 -- Get the table row. First check if it exists.
@@ -765,7 +938,7 @@ function updateCooldowns()
 end
 
 function reset_spell_numbers()
-    t_reset = GetTime()
+    local t_reset = GetTime()
     for i,entry in ipairs(monitoredSpells) do
         entry.lastUsed = t_reset
     end
@@ -773,6 +946,7 @@ function reset_spell_numbers()
 end
 
 function hard_reset_table()
+    update_icons = true
     monitoredSpells = {}
 end
 
@@ -846,7 +1020,7 @@ local function onTick()
     updateTableText()
 
     if periodic_save == true then save_to_file() end
-    C_Timer.After(0.5, onTick)
+    C_Timer.After(tick_frequency, onTick)
 end
 
 local function onTick_init()
@@ -882,6 +1056,7 @@ local function onPlayerLogin()
         --filterSpellsWithCooldownGreaterThan30()
         updateTableText()
     else
+        -- Try again every half second.
         C_Timer.After(0.5,onPlayerLogin)
     end
 end
@@ -922,41 +1097,218 @@ cooldownFrame:SetScript("OnEvent", function(self, event, ...)
 end)
 
 
-local function allow_frame_movement(bool_val)
-    cooldownFrame:SetMovable(true)
-    cooldownFrame:EnableMouse(true)
-    cooldownFrame:SetScript("OnMouseDown",function(self, button)
-        if button == "LeftButton" then 
-            self:StartMoving()
-        end
-    end)
-    cooldownFrame:SetScript("OnMouseUp",function(self,button)
-        self:StopMovingOrSizing()
-    end)
+local function show_frame(bool_val)
+    if bool_val == true then 
+        cooldownFrame:Show() 
+    elseif bool_val == false then 
+        cooldownFrame:Hide()
+    end
 end
-allow_frame_movement(true)
 
 -- ============================================================================
 -- ============================================================================
 -- ============================================================================
-
+-- Code past here lives in the WoW options frame.
 
 local CDTOptions = CreateFrame("Frame", "CooldownTrackerOptionsFrame", InterfaceOptionsFramePanelContainer)
 CDTOptions.name = "CooldownTracker"
 
-local function CDT_Draw_Options()
+function CDT_draw_vars()
+    -- Create the panel
+    local CdtVars_List = CreateFrame("ScrollFrame", "CdtVars_ListFrame", CDTOptions, "UIPanelScrollFrameTemplate")
+    CdtVars_List:SetSize(CDTOptions:GetWidth()*0.95, CDTOptions:GetHeight()*1/3)
+    CdtVars_List:SetPoint("TOPLEFT",CDTOptions,"TOPLEFT",0,0)
+    
+    local CdtVars_ListContent = CreateFrame("Frame", "CooldownTrackerListContentFrame", CdtVars_List)
+    CdtVars_ListContent:SetSize(CdtVars_List:GetSize())
+    CdtVars_List:SetScrollChild(CdtVars_ListContent)
+
+    -- ==
+    -- Create checkboxes 
+    -- ==
+    local showFrameCheckbox = CreateFrame("CheckButton", nil, CdtVars_ListContent, "ChatConfigCheckButtonTemplate")
+    showFrameCheckbox:SetPoint("TOPLEFT", 16, -16)
+    showFrameCheckbox:SetChecked(cdt_opts.show_frame)
+    showFrameCheckbox:SetScript("OnClick", function(self)
+        cdt_opts.show_frame = self:GetChecked()
+        show_frame(cdt_opts.show_frame)
+        options_push_vars()
+    end)
+    -- Create the label for the learning mode checkbox.
+    local showFrameLabel = CdtVars_ListContent:CreateFontString(nil, "ARTWORK", "GameFontNormal")
+    showFrameLabel:SetPoint("LEFT", showFrameCheckbox, "RIGHT", 0, 1)
+    showFrameLabel:SetText("Show Frame")
+    showFrameCheckbox.text = showFrameLabel
+
+    -- ==
+    -- Create the movable and resizable dropdown.
+    --   I tried to make it checkboxes but between enabling and disabling 
+    --     movability and resizability things devolved into chaos. So instead
+    --     I'm using a dropdown.
+    local adjustabilityLabel = CdtVars_ListContent:CreateFontString(nil, "ARTWORK", "GameFontNormal")
+    adjustabilityLabel:SetPoint("TOPLEFT", showFrameCheckbox, "BOTTOMLEFT", 0, -4)
+    adjustabilityLabel:SetWidth(120)
+    adjustabilityLabel:SetJustifyH("CENTER")
+    adjustabilityLabel:SetText("Frame Adjustability")
+    if debug_print == true then print("Adjustability: ",cdt_opts.frame_adjustability) end
+    local adjustabilityDropdown = CreateFrame("Frame", nil, CdtVars_ListContent, "UIDropDownMenuTemplate")
+    adjustabilityDropdown:SetPoint("TOPLEFT", adjustabilityLabel, "BOTTOMLEFT", 0, -2)
+    UIDropDownMenu_SetWidth(adjustabilityDropdown, 120)
+    UIDropDownMenu_SetText(adjustabilityDropdown, string.lower(cdt_opts.frame_adjustability) == "none" and "None" or string.lower(cdt_opts.frame_adjustability) == "movable" and "Movable" or "Resizable")
+    UIDropDownMenu_Initialize(adjustabilityDropdown, function(self, level)
+        local info = UIDropDownMenu_CreateInfo()
+        info.text = "None"
+        info.value = "none"
+        info.checked = cdt_opts.frame_adjustability == "none"
+        info.func = function()
+            adjust_changeability("none")
+            UIDropDownMenu_SetText(adjustabilityDropdown, "None")
+        end
+        UIDropDownMenu_AddButton(info, level)
+
+        info.text = "Movable"
+        info.value = "movable"
+        info.checked = cdt_opts.frame_adjustability == "movable"
+        info.func = function()
+            adjust_changeability("movable")
+            UIDropDownMenu_SetText(adjustabilityDropdown, "Movable")
+        end
+        UIDropDownMenu_AddButton(info, level)
+
+        info.text = "Resizable"
+        info.value = "resizable"
+        info.checked = cdt_opts.frame_adjustability == "resizable"
+        info.func = function()
+            adjust_changeability("resizable")
+            UIDropDownMenu_SetText(adjustabilityDropdown, "Resizable")
+        end
+        UIDropDownMenu_AddButton(info, level)
+    end)
+
+    -- ==
+    local learningModeCheckbox = CreateFrame("CheckButton", nil, CdtVars_ListContent, "ChatConfigCheckButtonTemplate")
+    learningModeCheckbox:SetPoint("TOPLEFT", adjustabilityDropdown, "BOTTOMLEFT", 0, -4)
+    learningModeCheckbox:SetChecked(cdt_opts.learning_mode)
+    learningModeCheckbox:SetScript("OnClick", function(self)
+        cdt_opts.learning_mode = self:GetChecked()
+        options_push_vars()
+    end)
+    -- Create the label for the learning mode checkbox.
+    local learningModeLabel = CdtVars_ListContent:CreateFontString(nil, "ARTWORK", "GameFontNormal")
+    learningModeLabel:SetPoint("LEFT", learningModeCheckbox, "RIGHT", 0, 1)
+    learningModeLabel:SetText("Learning Mode")
+    learningModeCheckbox.text = learningModeLabel
+    
+    -- ==
+    local periodicSaveCheckbox = CreateFrame("CheckButton", nil, CdtVars_ListContent, "ChatConfigCheckButtonTemplate")
+    periodicSaveCheckbox:SetPoint("TOPLEFT", learningModeCheckbox, "BOTTOMLEFT", 0, -4)
+    periodicSaveCheckbox:SetChecked(cdt_opts.periodic_save)
+    periodicSaveCheckbox:SetScript("OnClick", function(self)
+        cdt_opts.periodic_save = self:GetChecked()
+        options_push_vars()
+    end)
+    -- Create the label for the learning mode checkbox.
+    local periodicSaveLabel = CdtVars_ListContent:CreateFontString(nil, "ARTWORK", "GameFontNormal")
+    periodicSaveLabel:SetPoint("LEFT", periodicSaveCheckbox, "RIGHT", 0, 1)
+    periodicSaveLabel:SetText("Periodic Save")
+    periodicSaveCheckbox.text = periodicSaveLabel
+
+    -- ==
+    -- Create the tick frequency length edit box.
+    local tickFrequencyEditBox = CreateFrame("EditBox", nil, CdtVars_ListContent, "InputBoxTemplate")
+    tickFrequencyEditBox:SetPoint("TOPLEFT", 16+CDTOptions:GetWidth()*1/2, -16)
+    tickFrequencyEditBox:SetWidth(80)
+    tickFrequencyEditBox:SetHeight(20)
+    tickFrequencyEditBox:SetAutoFocus(false)
+    tickFrequencyEditBox:SetNumeric(false)
+    tickFrequencyEditBox:SetMaxLetters(4) -- Increase the maximum number of letters to accommodate floating point numbers
+    tickFrequencyEditBox:SetText(tostring(cdt_opts.tick_frequency))
+    tickFrequencyEditBox:SetScript("OnEnterPressed", function(self)
+        self:ClearFocus()
+        cdt_opts.tick_frequency = tonumber(self:GetText())
+        options_push_vars()
+    end)
+
+    -- Create the label for the max display length edit box.
+    local tickFrequencyLabel = CdtVars_ListContent:CreateFontString(nil, "ARTWORK", "GameFontNormal")
+    tickFrequencyLabel:SetPoint("LEFT", tickFrequencyEditBox, "RIGHT", 8, 0)
+    tickFrequencyLabel:SetText("Update Frequency (sec)")
+
+    -- Create a tooltip for the max display length edit box.
+    tickFrequencyEditBox:SetScript("OnEnter", function(self)
+        GameTooltip:SetOwner(self, "ANCHOR_TOP")
+        GameTooltip:SetText("Enter a value (in seconds). 0.5 seconds is recommended.")
+        GameTooltip:Show()
+    end)
+    tickFrequencyEditBox:SetScript("OnLeave", function()
+        GameTooltip:Hide()
+    end)
+
+    -- ==
+    -- Create the tracking threshold edit box.
+    local trackThresholdEditBox = CreateFrame("EditBox", nil, CdtVars_ListContent, "InputBoxTemplate")
+    trackThresholdEditBox:SetPoint("TOPLEFT", tickFrequencyEditBox, "BOTTOMLEFT", 0, -4)
+    trackThresholdEditBox:SetWidth(80)
+    trackThresholdEditBox:SetHeight(20)
+    trackThresholdEditBox:SetAutoFocus(false)
+    trackThresholdEditBox:SetNumeric(true)
+    trackThresholdEditBox:SetMaxLetters(4)
+    trackThresholdEditBox:SetText(tostring(cdt_opts.track_threshold))
+    trackThresholdEditBox:SetScript("OnEnterPressed", function(self)
+        self:ClearFocus()
+        cdt_opts.track_threshold = tonumber(self:GetText())
+        options_push_vars()
+    end)
+    -- Create the label for the max display length edit box.
+    local trackThresholdLabel = CdtVars_ListContent:CreateFontString(nil, "ARTWORK", "GameFontNormal")
+    trackThresholdLabel:SetPoint("LEFT", trackThresholdEditBox, "RIGHT", 8, 0)
+    trackThresholdLabel:SetText("Tracking Threshold (sec)")
+    -- Create a tooltip for the max display length edit box.
+    trackThresholdEditBox:SetScript("OnEnter", function(self)
+        GameTooltip:SetOwner(self, "ANCHOR_TOP")
+        GameTooltip:SetText("Enter a value (in seconds). Cooldowns >= this amount will be tracked. 30 seconds is default.")
+        GameTooltip:Show()
+    end)
+    trackThresholdEditBox:SetScript("OnLeave", function()
+        GameTooltip:Hide()
+    end)
+
+    -- Create the max display length edit box.
+    local maxDisplayLengthEditBox = CreateFrame("EditBox", nil, CdtVars_ListContent, "InputBoxTemplate")
+    maxDisplayLengthEditBox:SetPoint("TOPLEFT", trackThresholdEditBox, "BOTTOMLEFT", 0, -4)
+    maxDisplayLengthEditBox:SetWidth(80)
+    maxDisplayLengthEditBox:SetHeight(20)
+    maxDisplayLengthEditBox:SetAutoFocus(false)
+    maxDisplayLengthEditBox:SetNumeric(true)
+    maxDisplayLengthEditBox:SetMaxLetters(2)
+    maxDisplayLengthEditBox:SetText(tostring(cdt_opts.str_max_disp_len))
+    maxDisplayLengthEditBox:SetScript("OnEnterPressed", function(self)
+        self:ClearFocus()
+        cdt_opts.str_max_disp_len = tonumber(self:GetText())
+        options_push_vars()
+    end)
+    -- Create the label for the max display length edit box.
+    local maxDisplayLengthLabel = CdtVars_ListContent:CreateFontString(nil, "ARTWORK", "GameFontNormal")
+    maxDisplayLengthLabel:SetPoint("LEFT", maxDisplayLengthEditBox, "RIGHT", 8, 0)
+    maxDisplayLengthLabel:SetText("Max Spell Name Display Length")
+    -- Create a tooltip for the max display length edit box.
+    maxDisplayLengthEditBox:SetScript("OnEnter", function(self)
+        GameTooltip:SetOwner(self, "ANCHOR_TOP")
+        GameTooltip:SetText("Enter a value between 5 and 50. Default is 20, but smaller screens might need 15.")
+        GameTooltip:Show()
+    end)
+    maxDisplayLengthEditBox:SetScript("OnLeave", function()
+        GameTooltip:Hide()
+    end)
+end
+
+local function CDT_draw_spell_lists()
     local y_size = 24
     local y_pad = 8  -- this is a guess
-
-    -- Clear the frame
-    for i, child in ipairs({CDTOptions:GetChildren()}) do
-        child:Hide()
-        child:SetParent(nil)
-    end
       
     local CDTList = CreateFrame("ScrollFrame", "CooldownTrackerListFrame", CDTOptions, "UIPanelScrollFrameTemplate")
-    CDTList:SetSize(CDTOptions:GetWidth()*0.95, CDTOptions:GetHeight()*2/3)
-    CDTList:SetPoint("TOPLEFT", 0, 0)
+    CDTList:SetSize(CDTOptions:GetWidth()*0.95, CDTOptions:GetHeight()*1/3)
+    CDTList:SetPoint("LEFT", 0, 0)
 
     local CooldownTrackerListContent = CreateFrame("Frame", "CooldownTrackerListContentFrame", CDTList)
     CooldownTrackerListContent:SetSize(CDTList:GetSize())
@@ -1022,7 +1374,7 @@ local function CDT_Draw_Options()
         local options = {
             {text = "Offensive", value = "offensive"},
             {text = "Defensive", value = "defensive"},
-            {text = "Crowd Control", value = "crowd_control"},
+            {text = "Utility", value = "utility"},
         }
 
         UIDropDownMenu_Initialize(dropdown, function(self, level)
@@ -1062,7 +1414,7 @@ local function CDT_Draw_Options()
 
     -- ========================================================================
     local BLList = CreateFrame("ScrollFrame", "BlacklistListFrame", CDTOptions, "UIPanelScrollFrameTemplate")
-    BLList:SetSize(CDTList:GetWidth(), CDTList:GetHeight()*1/2)
+    BLList:SetSize(CDTOptions:GetWidth()*0.95, CDTOptions:GetHeight()*1/3)
     BLList:SetPoint("TOPLEFT", CDTList, "BOTTOMLEFT", 0, 0)
 
     local BlacklistContent = CreateFrame("Frame", "BlacklistContentFrame", BLList)
@@ -1147,5 +1499,15 @@ local function CDT_Draw_Options()
     -- print("d: ",BlacklistContent:GetRect())
 end
 
+function CDT_Draw_Options()
+    -- Clear the frame
+    for i, child in ipairs({CDTOptions:GetChildren()}) do
+        child:Hide()
+        child:SetParent(nil)
+    end
+
+    CDT_draw_vars()
+    CDT_draw_spell_lists()
+end
 CDTOptions:SetScript("OnShow",CDT_Draw_Options)
 InterfaceOptions_AddCategory(CDTOptions)
