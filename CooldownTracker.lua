@@ -1,7 +1,7 @@
 -- Next steps: 
 --   Options UI blacklist by Spell ID.
 --   Options UI whitelist spells.
---   Spells with charges (e.g. evoker Obsidian Scales)
+--   Spells who can have their cooldown reduced.
 
 local icon_file_id_to_path = {}
 
@@ -14,6 +14,10 @@ local tick_frequency = 0.5 -- seconds
 local track_threshold = 30 -- seconds
 local str_max_disp_len = 20 -- character length
 local sort_method = "cooldown"
+
+-- For the display on screen, how many "blank rows" will it leave.
+--   Don't go below 0 unless you want things to get real weird.
+local section_line_breaks = 2
 
 -- Some semi-hidden vars
 local coordinate_x = 10
@@ -328,6 +332,15 @@ function load_table(table_name)
             monitoredSpells = CooldownTrackerDB[UnitClass("player")][spec_name].saved_spells
             if monitoredSpells == nil then 
                 monitoredSpells = {}
+            end
+        end
+
+        -- Reset numbers if the time since last used is too large. 
+        if #monitoredSpells > 0 then
+            curr_time = GetTime()
+            if (curr_time - monitoredSpells[1].lastUsed) > 7200 or (curr_time - monitoredSpells[1].lastUsed) < 0 then
+                -- Accounting for overflow. Resetting if haven't logged in in the last hour. 
+                reset_spell_numbers()
             end
         end
     elseif table_name == "blacklist" then
@@ -806,7 +819,7 @@ local function updateTableText()
 
     -- ======
     if #defensive_spells > 0 then
-        y_offset = y_offset + 3*y_size
+        y_offset = y_offset + section_line_breaks*y_size
 
         local title_row = nil
         if rows["title_defensive"] == nil then
@@ -880,7 +893,7 @@ local function updateTableText()
     end
 
     if #utility_spells > 0 then
-        y_offset = y_offset + 3*y_size
+        y_offset = y_offset + section_line_breaks*y_size
 
         local title_row = nil
         if rows["title_utility"] == nil then
@@ -960,12 +973,37 @@ end
 function updateCooldowns()
     if not monitoredSpells then return end
 
+    local curr_time = GetTime()
     for _, spellData in ipairs(monitoredSpells) do
-        local spellName, _, spellIcon, spellCooldown = GetSpellInfo(spellData.spellID)
-        local start, duration, enabled = GetSpellCooldown(spellData.spellID)
+        local spellName, _, spellIcon, _, _, _, _, _ = GetSpellInfo(spellData.spellID)
+        local start, duration, enabled,_ = GetSpellCooldown(spellData.spellID)
         if spellData.max_charges == 1 then
             if start ~= nil and duration > 1.5 and duration >= track_threshold then
                 spellData.lastUsed = start
+            else
+                -- Want a special case that detects if a spell can get reduced cooldown.
+                --   A good example is Demon Hunter Eye Beams, which (via a talent) can 
+                --   have its cooldown reduced by spending fury.
+                -- As an example, assume Eye Beam is cast at time t=0, and the DH is 
+                --   able to reduce its cd to 20 seconds. The user should have 
+                --   one "missed cast" starting at t=20 and two "missed casts" 
+                --   starting at t=60 (I'm not going to try to use past data to 
+                --   project future likely reduction in cooldown, that way lies madness).
+                -- Unfortunately, the addon won't show one "missed cast" until t=40 
+                --   and won't transition to two missed casts until t=80. 
+                -- So the thing to do is to check: if duration == 0 (i.e. it's off cd)
+                --   and if GetTime() - spellData.lastUsed < spellData.cooldown . This
+                --   will happen in the example above. The bandaid is to adjust the 
+                --   lastUsed time to be GetTime - spellData.cooldown, which on the 
+                --   display will be inaccurate Last Used but accurate missed casts.
+                -- I suppose a more elegant solution would have a "LastUsed" and "LastUsed_calc"
+                --   and use this calc value for the missed casts calcs and keep the 
+                --   LastUsed unchanged in the situation outlined above.
+                --
+                -- Update: Tested it and it actually works fine without this. Huh. Never mind.
+                -- if curr_time - spellData.lastUsed < spellData.cooldown then
+                --     spellData.lastUsed = curr_time - spellData.cooldown
+                -- end
             end
         else
             curr_charges,max_charges,last_cast,cooldown,_ = GetSpellCharges(spellData.spellID)
