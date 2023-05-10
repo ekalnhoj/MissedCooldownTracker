@@ -977,7 +977,12 @@ function updateCooldowns()
     for _, spellData in ipairs(monitoredSpells) do
         local spellName, _, spellIcon, _, _, _, _, _ = GetSpellInfo(spellData.spellID)
         local start, duration, enabled,_ = GetSpellCooldown(spellData.spellID)
-        if spellData.max_charges == 1 then
+
+        -- This interlude because of shenanigans that seem to happen with battle 
+        --   resurrections causing errors when not in a boss fight / M+. 
+        local is_no_charge_spell = false
+        if GetSpellCharges(spellData.spellID) == nil then is_no_charge_spell = true end
+        if is_no_charge_spell then
             if start ~= nil and duration > 1.5 and duration >= track_threshold then
                 spellData.lastUsed = start
             else
