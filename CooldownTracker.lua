@@ -7,11 +7,12 @@ local icon_file_id_to_path = {}
 
 local learning_mode = true
 local periodic_save = true
-local show_frame = true -- NYI
+local show_frame = true
 local frame_adjustability = "None"
 
 local tick_frequency = 0.5 -- seconds
-local track_threshold = 30 -- seconds
+local track_threshold_min = 30 -- seconds
+local track_threshold_max = 300 -- seconds
 local str_max_disp_len = 20 -- character length
 local sort_method = "cooldown"
 
@@ -115,7 +116,14 @@ function save_spelllist()
     _,spec_name,_,spec_icon,_,_ = GetSpecializationInfo(spec_idx)
 
     local savedVariables = _G[addonName.."DB"] or {[UnitClass("player")]={[spec_name]={}}}
-    savedVariables[UnitClass("player")][spec_name].saved_spells = monitoredSpells
+    local playerData = savedVariables[UnitClass("player")] or {}
+    local specData = playerData[spec_name] or {}
+    specData.saved_spells = monitoredSpells
+    if spec_name == nil then print("Spec name is nil.") end
+    if UnitClass("player") == nil then print("Unit Class Player is nil.") end
+    if addonName == nil then print("addonName is nil") end
+    playerData[spec_name] = specData
+    savedVariables[UnitClass("player")] = playerData
     _G[addonName.."DB"] = savedVariables
 end
 
@@ -268,7 +276,8 @@ local function options_push_vars()
     frame_adjustability = cdt_opts.frame_adjustability
     show_frame = cdt_opts.show_frame
     tick_frequency = cdt_opts.tick_frequency
-    track_threshold = cdt_opts.track_threshold
+    track_threshold_min = cdt_opts.track_threshold_min
+    track_threshold_max = cdt_opts.track_threshold_max
     str_max_disp_len = cdt_opts.str_max_disp_len
     sort_method = cdt_opts.sort_method
     coordinate_x = cdt_opts.coordinate_x
@@ -280,7 +289,7 @@ local function options_push_vars()
         print("Local vars loaded: ",
             cdt_opts.coordinate_x,cdt_opts.coordinate_y,cdt_opts.size_x,cdt_opts.size_y,
             learning_mode,periodic_save,frame_adjustability,show_frame,
-            tick_frequency,track_threshold,str_max_disp_len,sort_method
+            tick_frequency,track_threshold_min,track_threshold_max,str_max_disp_len,sort_method
         )
     end
 end
@@ -366,14 +375,15 @@ function load_table(table_name)
             learning_mode = true,
             periodic_save = true,
             frame_adjustability = "None",
-            show_frame = true, -- NYI
+            show_frame = true,
             coordinate_x = 20,
             coordinate_y = 600,
             size_x = 300,
             size_y = 400,
 
             tick_frequency = 0.5, -- seconds
-            track_threshold = 30, -- seconds
+            track_threshold_min = 30, -- seconds
+            track_threshold_max = 300, -- seconds
             str_max_disp_len = 20, -- character length
             sort_method="cooldown"
         }
@@ -404,12 +414,20 @@ function load_table(table_name)
             if debug_print == true then 
                 print("Loading")
             end
-            cdt_opts = CooldownTrackerDB.cdt_options
+
+            -- Doing a weird-ish load to avoid loading any defunct parameters.
+            cdt_opts = cdt_opts_default
+            for k,entry in pairs(cdt_opts_default) do
+                if CooldownTrackerDB.cdt_options[k] ~= nil then
+                    cdt_opts[k] = CooldownTrackerDB.cdt_options[k]
+                end
+            end
         end
 
         -- And load the local variables with these values.
         adjust_changeability("Neither")
         options_push_vars()
+
     end
     if debug_print == true then print("Loaded table ",table_name) end
 end
@@ -556,7 +574,7 @@ local function get_all_spells_with_cd_over_threshold()
                     _,max_charges,_,duration,_ = GetSpellCharges(spellID)
                 end
                 
-                if duration and duration >= track_threshold then
+                if duration and duration >= track_threshold_min and duration <= track_threshold_max then
                     -- Assuming it's an offensive spell until told otherwise.
                     -- is_known is probably how I'll handle different talent sets? Upon talent set swap it goes through the list and hides any spells not known.
                     table.insert(monitoredSpells,{spellID=spellID, spellName=spellName, cooldown=duration, lastUsed=-1, spelIcon=spellIcon, spellIcon_filePath=spellIcon_filePath, classification="offensive", is_known=true, has_charges=has_charges, max_charges=max_charges})
@@ -576,7 +594,7 @@ function validate_table_for_params()
     for i,entry in ipairs(monitoredSpells) do
         is_known_new = IsSpellKnown(entry.spellID)
         -- Hacking in a way to validate for cd changes in addition to whether it's known.
-        if entry.cooldown < track_threshold then is_known_new = false end
+        if entry.cooldown < track_threshold_min then is_known_new = false end
         entry.is_known = is_known_new
     end
     update_icons = true
@@ -983,7 +1001,7 @@ function updateCooldowns()
         local is_no_charge_spell = false
         if GetSpellCharges(spellData.spellID) == nil then is_no_charge_spell = true end
         if is_no_charge_spell then
-            if start ~= nil and duration > 1.5 and duration >= track_threshold then
+            if start ~= nil and duration > 1.5 and duration >= track_threshold_min and duration <= track_threshold_max then
                 spellData.lastUsed = start
             else
                 -- Want a special case that detects if a spell can get reduced cooldown.
@@ -1012,7 +1030,7 @@ function updateCooldowns()
             end
         else
             curr_charges,max_charges,last_cast,cooldown,_ = GetSpellCharges(spellData.spellID)
-            if curr_charges < max_charges and cooldown > 1.5 and cooldown >= track_threshold then
+            if curr_charges < max_charges and cooldown > 1.5 and cooldown >= track_threshold_min and cooldown <= track_threshold_max then
                 spellData.lastUsed = last_cast
             end
         end
@@ -1138,8 +1156,8 @@ local function onPlayerLogin()
         --filterSpellsWithCooldownGreaterThan30()
         updateTableText()
     else
-        -- Try again every half second.
-        C_Timer.After(0.5,onPlayerLogin)
+        -- Try again every second.
+        C_Timer.After(1,onPlayerLogin)
     end
 end
 
@@ -1327,38 +1345,67 @@ function CDT_draw_vars()
     end)
 
     -- ==
-    -- Create the tracking threshold edit box.
-    local trackThresholdEditBox = CreateFrame("EditBox", nil, CdtVars_ListContent, "InputBoxTemplate")
-    trackThresholdEditBox:SetPoint("TOPLEFT", tickFrequencyEditBox, "BOTTOMLEFT", 0, -4)
-    trackThresholdEditBox:SetWidth(80)
-    trackThresholdEditBox:SetHeight(20)
-    trackThresholdEditBox:SetAutoFocus(false)
-    trackThresholdEditBox:SetNumeric(true)
-    trackThresholdEditBox:SetMaxLetters(4)
-    trackThresholdEditBox:SetText(tostring(cdt_opts.track_threshold))
-    trackThresholdEditBox:SetScript("OnEnterPressed", function(self)
+    -- Create the tracking threshold minimum edit box.
+    local trackThresholdMinEditBox = CreateFrame("EditBox", nil, CdtVars_ListContent, "InputBoxTemplate")
+    trackThresholdMinEditBox:SetPoint("TOPLEFT", tickFrequencyEditBox, "BOTTOMLEFT", 0, -4)
+    trackThresholdMinEditBox:SetWidth(80)
+    trackThresholdMinEditBox:SetHeight(20)
+    trackThresholdMinEditBox:SetAutoFocus(false)
+    trackThresholdMinEditBox:SetNumeric(true)
+    trackThresholdMinEditBox:SetMaxLetters(4)
+    trackThresholdMinEditBox:SetText(tostring(cdt_opts.track_threshold_min))
+    trackThresholdMinEditBox:SetScript("OnEnterPressed", function(self)
         self:ClearFocus()
-        cdt_opts.track_threshold = tonumber(self:GetText())
+        cdt_opts.track_threshold_min = tonumber(self:GetText())
         options_push_vars()
         validate_table_for_params()
     end)
     -- Create the label for the max display length edit box.
-    local trackThresholdLabel = CdtVars_ListContent:CreateFontString(nil, "ARTWORK", "GameFontNormal")
-    trackThresholdLabel:SetPoint("LEFT", trackThresholdEditBox, "RIGHT", 8, 0)
-    trackThresholdLabel:SetText("Tracking Threshold (sec)")
+    local trackThresholdMinLabel = CdtVars_ListContent:CreateFontString(nil, "ARTWORK", "GameFontNormal")
+    trackThresholdMinLabel:SetPoint("LEFT", trackThresholdMinEditBox, "RIGHT", 8, 0)
+    trackThresholdMinLabel:SetText("Tracking Threshold Min (sec)")
     -- Create a tooltip for the max display length edit box.
-    trackThresholdEditBox:SetScript("OnEnter", function(self)
+    trackThresholdMinEditBox:SetScript("OnEnter", function(self)
         GameTooltip:SetOwner(self, "ANCHOR_TOP")
         GameTooltip:SetText("Enter a value (in seconds). Cooldowns >= this amount will be tracked. 30 seconds is default.")
         GameTooltip:Show()
     end)
-    trackThresholdEditBox:SetScript("OnLeave", function()
+    trackThresholdMinEditBox:SetScript("OnLeave", function()
+        GameTooltip:Hide()
+    end)
+
+    -- Create the tracking threshold maximum  edit box.
+    local trackThresholdMaxEditBox = CreateFrame("EditBox", nil, CdtVars_ListContent, "InputBoxTemplate")
+    trackThresholdMaxEditBox:SetPoint("TOPLEFT", trackThresholdMinEditBox, "BOTTOMLEFT", 0, -4)
+    trackThresholdMaxEditBox:SetWidth(80)
+    trackThresholdMaxEditBox:SetHeight(20)
+    trackThresholdMaxEditBox:SetAutoFocus(false)
+    trackThresholdMaxEditBox:SetNumeric(true)
+    trackThresholdMaxEditBox:SetMaxLetters(4)
+    trackThresholdMaxEditBox:SetText(tostring(cdt_opts.track_threshold_max))
+    trackThresholdMaxEditBox:SetScript("OnEnterPressed", function(self)
+        self:ClearFocus()
+        cdt_opts.track_threshold_max = tonumber(self:GetText())
+        options_push_vars()
+        validate_table_for_params()
+    end)
+    -- Create the label for the max display length edit box.
+    local trackThresholdMaxLabel = CdtVars_ListContent:CreateFontString(nil, "ARTWORK", "GameFontNormal")
+    trackThresholdMaxLabel:SetPoint("LEFT", trackThresholdMaxEditBox, "RIGHT", 8, 0)
+    trackThresholdMaxLabel:SetText("Tracking Threshold Max (sec)")
+    -- Create a tooltip for the max display length edit box.
+    trackThresholdMaxEditBox:SetScript("OnEnter", function(self)
+        GameTooltip:SetOwner(self, "ANCHOR_TOP")
+        GameTooltip:SetText("Enter a value (in seconds). Cooldowns <= this amount will be tracked. 300 seconds is default.")
+        GameTooltip:Show()
+    end)
+    trackThresholdMaxEditBox:SetScript("OnLeave", function()
         GameTooltip:Hide()
     end)
 
     -- Create the max display length edit box.
     local maxDisplayLengthEditBox = CreateFrame("EditBox", nil, CdtVars_ListContent, "InputBoxTemplate")
-    maxDisplayLengthEditBox:SetPoint("TOPLEFT", trackThresholdEditBox, "BOTTOMLEFT", 0, -4)
+    maxDisplayLengthEditBox:SetPoint("TOPLEFT", trackThresholdMaxEditBox, "BOTTOMLEFT", 0, -4)
     maxDisplayLengthEditBox:SetWidth(80)
     maxDisplayLengthEditBox:SetHeight(20)
     maxDisplayLengthEditBox:SetAutoFocus(false)
