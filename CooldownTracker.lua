@@ -119,9 +119,16 @@ function save_spelllist()
     local playerData = savedVariables[UnitClass("player")] or {}
     local specData = playerData[spec_name] or {}
     specData.saved_spells = monitoredSpells
-    if spec_name == nil then print("Spec name is nil.") end
+    if spec_name == nil then 
+        -- after going through portals? unclear, but this seems to be an issue
+        print("Spec name is nil.")
+        return -1
+    end
     if UnitClass("player") == nil then print("Unit Class Player is nil.") end
-    if addonName == nil then print("addonName is nil") end
+    if addonName == nil then 
+        print("addonName is nil") 
+        return -1
+    end
     playerData[spec_name] = specData
     savedVariables[UnitClass("player")] = playerData
     _G[addonName.."DB"] = savedVariables
@@ -144,10 +151,21 @@ function save_options()
     _G[addonName.."DB"] = savedVariables
 end
 
+
 function save_to_file()
-    save_spelllist()
-    save_blacklist()
-    save_options()
+    local success_s = 0
+    local success_b = 0
+    local success_o = 0    
+    success_s = save_spelllist()
+    success_b = save_blacklist()
+    success_o = save_options()
+    if periodic_save == false then
+        -- If saving failed and we don't periodically try to save, then try 
+        --   again after a few seconds.
+        if success_s < 0 or success_b < 0 or success_o < 0 then
+            C_Timer.After(5,save_to_file)
+        end        
+    end
 end
 
 local function update_frame_info()
