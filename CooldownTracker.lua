@@ -121,12 +121,10 @@ function save_spelllist()
     specData.saved_spells = monitoredSpells
     if spec_name == nil then 
         -- after going through portals? unclear, but this seems to be an issue
-        print("Spec name is nil.")
         return -1
     end
     if UnitClass("player") == nil then print("Unit Class Player is nil.") end
     if addonName == nil then 
-        print("addonName is nil") 
         return -1
     end
     playerData[spec_name] = specData
