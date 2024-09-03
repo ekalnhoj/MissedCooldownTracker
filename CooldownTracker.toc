@@ -1,8 +1,31 @@
-## Interface: 100100
+## Interface: 110002
 ## Title: CooldownTracker
 ## Author: John Lake
 ## Version: 1.0
 ## SavedVariables: CooldownTrackerDB
 
+
+
+# Library files
+#@no-lib-strip@
+Libs\LibStub\LibStub.lua
+Libs\CallbackHandler-1.0\CallbackHandler-1.0.xml
+Libs\AceAddon-3.0\AceAddon-3.0.xml
+Libs\AceEvent-3.0\AceEvent-3.0.xml
+Libs\AceDB-3.0\AceDB-3.0.xml
+Libs\AceDBOptions-3.0\AceDBOptions-3.0.xml
+Libs\AceLocale-3.0\AceLocale-3.0.xml
+Libs\AceGUI-3.0\AceGUI-3.0.xml
+Libs\AceConsole-3.0\AceConsole-3.0.xml
+Libs\AceConfig-3.0\AceConfig-3.0.xml
+#@end-no-lib-strip@
+
+# Locale files
+Locales\Locale-enUS.lua
+Locales\Locale-esES.lua
+
+# Core files
 CooldownTracker.lua
 ArtTextureID.lua
+cdt_SpellManager.lua
+cdt_UIManager.lua
