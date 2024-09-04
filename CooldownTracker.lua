@@ -32,10 +32,11 @@ local defaults = {
 	},
 }
 
-local classification_options_to_str = {}
-classification_options_to_str["offensive"] ="Offensive"
-classification_options_to_str["defensive"] ="Defensive"
-classification_options_to_str["utility"] ="Utility"
+local classification_options_to_str = {
+    offensive = "Offensive",
+    defensive = "Defensive",
+    utility = "Utility",
+}
 
 function CooldownTracker:hasNonIndexKeys(tbl)
     for k, _ in pairs(tbl) do
@@ -172,7 +173,7 @@ options = {
 }
 
 -- Table entry structure:
---   {spellID=spellID, spellName=spellName, cooldown=duration, lastUsed=-1, spelIcon=spellIcon, spellIcon_filePath=spellIcon_filePath, classification="offensive", is_known=true, has_charges=has_charges, max_charges=max_charges}
+--   {spellID=spellID, spellName=spellName, cooldown=duration, lastUsed=-1, spelIcon=spellIcon, spellIcon_filePath=spellIcon_filePath, spellBookTab=spellBookTab, classification="offensive", is_known=true, has_charges=has_charges, max_charges=max_charges}
 -- Function to generate the options table
 local function generateOptions(spellTable,is_the_blacklist)
 	-- if true then return {} end
@@ -194,6 +195,7 @@ local function generateOptions(spellTable,is_the_blacklist)
 				},
                 classification = {
                     type = "select",
+                    style="radio",
                     name = "Classification",
 					width = "half",
                     values = classification_options_to_str,
@@ -461,9 +463,11 @@ function CooldownTracker:CDT_SlashProcessorFunc(input)
     -- elseif input == "load blacklist" then
     --     load_table("blacklist")
     elseif input == "reset" then
-        reset_spell_numbers()
+        CooldownTracker:ResetSpellNumbers()
     elseif input == "hard reset" then
-        hard_reset_table()
+        CooldownTracker:HardResetTables()
+    elseif input == "table reload" then
+        CooldownTracker:LoadTables()
     elseif input == "redraw" then
         CooldownTracker:RedrawDisplay()
     -- elseif input == "sort cd" then

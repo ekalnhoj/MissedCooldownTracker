@@ -8,24 +8,17 @@
 local CooldownTracker = CooldownTracker
 
 
-local spell_list_all, class_spell_list, race_spell_list, blacklist
+local race_spell_page = 1
+local class_spell_page = 2
+local function GetSpecIdx() return GetSpecialization()+2 end
+local spell_list_all, race_spell_list, class_spell_list, spec_spell_list, blacklist
 local icon_file_id_to_path
 local debug_print
 
 function CooldownTracker:SpellManager_OnInitialize()
 	debug_print = CooldownTracker.debug_print
-	
+
 	-- Event-fired message functions registered in the main file.
-	
-    -- Set up some defaults
-	if self.db.profile.blacklist == nil then self.db.profile.blacklist = {} end
-	if self.db.race.race_spell_list == nil then self.db.race.race_spell_list = {} end
-	if self.db.class.class_spell_list == nil then self.db.class.class_spell_list = {} end
-	
-	-- Assign local vars.
-	blacklist = self.db.profile.blacklist
-	class_spell_list = self.db.class.class_spell_list
-	race_spell_list = class_spell_list -- self.db.race.race_spell_list
 end
 
 
@@ -101,25 +94,85 @@ function CooldownTracker:GetSpellList()
 end
 
 function CooldownTracker:GetBlacklist()
-    if blacklist == nil then return {} else return blacklist end
+	if self.db.profile.blacklist == nil then 
+		self.db.profile.blacklist = {}
+	end
+	return self.db.profile.blacklist
+end
+
+function CooldownTracker:GetRaceSpellList()
+	if self.db.race.race_spell_list == nil then 
+		self.db.race.race_spell_list = {}
+	end
+	return self.db.race.race_spell_list
+end
+
+function CooldownTracker:GetClassSpellList()
+	-- Make sure the outer table exists; if not, then make it.
+	if self.db.class.class_spell_list == nil then
+		self.db.class.class_spell_list = {}
+	end
+	-- Now check if the inner table exists; if not, then make it.
+	if self.db.class.class_spell_list[class_spell_page] == nil then
+		self.db.class.class_spell_list[class_spell_page] = {}
+	end
+	-- And return it.
+	return self.db.class.class_spell_list[class_spell_page]
+end
+
+function CooldownTracker:GetSpecSpellList()
+	-- Make sure the outer table exists; if not, then make it.
+	if self.db.class.class_spell_list == nil then
+		self.db.class.class_spell_list = {}
+	end
+	-- Now check if the inner table exists; if not, then make it.
+	if self.db.class.class_spell_list[CooldownTracker:GetSpecSpellPage()] == nil then
+		self.db.class.class_spell_list[CooldownTracker:GetSpecSpellPage()] = {}
+	end
+	return self.db.class.class_spell_list[CooldownTracker:GetSpecSpellPage()]
+end
+
+function CooldownTracker:GetSpecSpellPage()
+	return GetSpecIdx()+class_spell_page
+end
+
+function CooldownTracker:GetTableBySpellPage(spellPageIdx)
+	if spellPageIdx == -1 then
+		if debug_print == true then CooldownTracker:Print("Issue finding spell to remove.") end 
+	elseif spellPageIdx == 1 then return self:GetRaceSpellList()
+	elseif spellPageIdx == 2 then return self:GetClassSpellList()
+	else return self:GetSpecSpellList()
+	end 
 end
 
 function CooldownTracker:LoadTables()
-	spell_list_all = self.db.class.class_spell_list
-    blacklist = self.db.profile.blacklist
+	-- Would be pretty but my life is easier if I just use the numbers.
+	-- local classInfoStruct = C_PlayerInfo.GetClass({unit="player"})
+	-- local className = classInfoStruct.classFilename
+	-- local specInfoStruct = GetSpecializationInfo(GetSpecIdx())
+	-- local specName = specInfoStruct.name
 
-	-- Maybe-future feature: loading by spec name rather than just by class.
-	-- for i,v in ipairs(self.db.class.class_spell_list) do
-	-- 	table.insert(spell_list_all, v)
-	-- end
+	-- Assign local vars.
+    race_spell_list = self:GetRaceSpellList()
+	class_spell_list = self:GetClassSpellList()
+	spec_spell_list = self:GetSpecSpellList()
+	blacklist = self:GetBlacklist()
 
-    -- I've decided to delay this (I'd need to adjust the spell field to note 
-    --   if I thought it was a racial or class spell, and that will be 
-    --    less annoying to do once I have everything else working).
-	-- -- Next, race-specific spells (e.g. Shadowmeld).
-	-- for i,v in ipairs(self.db.race.race_spell_list) do
-	-- 	table.insert(spell_list_all, v)
-	-- end
+	-- Reset the table
+	spell_list_all = {}
+
+	-- Load race-specific spells.
+	for i,v in ipairs(race_spell_list) do
+		table.insert(spell_list_all, v)
+	end
+
+	for i,v in ipairs(class_spell_list) do
+		table.insert(spell_list_all, v)
+	end	
+	
+	for i,v in ipairs(spec_spell_list) do
+		table.insert(spell_list_all, v)
+	end	
 end
 
 function CooldownTracker:SaveTables()
@@ -158,21 +211,11 @@ function CooldownTracker:SortTable(method)
     end
 end
 
--- Notes to self:
---   Sorontar: Wild Charge is index 86
---   C_SpellBook.GetSpellBookItemCooldown(86,0) yields duration; is either 0 or 15, not a countdown. 
--- So logic needs to be:
---   . if spell is in tab 1, active, and a spell (not a flyout), then is racial
---   . if spell is later, then is druid spells. I could sort by spec, but I'd have to sort by class tree and spec tree which is doable but annoying and maybe not useful? If I do that, skillLineInfo has "name"
---   . GetSpellBookSkillLineInfo has an "isGuild" thing; maybe useful
--- 102401 = wild charge
--- 22842 = frenzied regen
-
-
 function CooldownTracker:GetAllSpellsWithCDOverThreshold()
 	local saving_spell_list = nil
 	local is_racial = nil
     for i = 1,C_SpellBook.GetNumSpellBookSkillLines() do
+		local spellBookTab = i
 		-- When (if) I separate out racials again then I'll re-enable this.
 		-- if i == 1 then 
 		-- 	saving_spell_list = race_spell_list
@@ -182,6 +225,7 @@ function CooldownTracker:GetAllSpellsWithCDOverThreshold()
 		-- 	is_racial = false
 		-- end
 		local skillLineInfo = C_SpellBook.GetSpellBookSkillLineInfo(i)
+		if skillLineInfo == nil then break end
 		local offset, numSlots = skillLineInfo.itemIndexOffset, skillLineInfo.numSpellBookItems
 		for j = offset+1, offset+numSlots do
 			-- Get info about the current spell.
@@ -243,12 +287,11 @@ function CooldownTracker:GetAllSpellsWithCDOverThreshold()
 
 							-- Assuming it's an offensive spell until told otherwise.
 							-- is_known is probably how I'll handle different talent sets? Upon talent set swap it goes through the list and hides any spells not known.
-							table.insert(spell_list_all,{spellID=spellID, spellName=spellName, cooldown=duration, lastUsed=-1, spelIcon=spellIcon, spellIcon_filePath=spellIcon_filePath, classification="offensive", is_known=true, has_charges=has_charges, max_charges=max_charges})
-							-- And save it into the race/class spell list. 
-							-- table.insert(saving_spell_list,{spellID=spellID, spellName=spellName, cooldown=duration, lastUsed=-1, spelIcon=spellIcon, spellIcon_filePath=spellIcon_filePath, classification="offensive", is_known=true, has_charges=has_charges, max_charges=max_charges})
+							table.insert(self:GetTableBySpellPage(spellBookTab),{spellID=spellID, spellName=spellName, cooldown=duration, lastUsed=-1, spellBookTab=spellBookTab, spelIcon=spellIcon, spellIcon_filePath=spellIcon_filePath, classification="offensive", is_known=true, has_charges=has_charges, max_charges=max_charges})
 							CooldownTracker:SortTable("cd")
 
 							CooldownTracker:Print("Just added " .. spellName .. " to spell list.")
+							CooldownTracker:LoadTables()
 							CooldownTracker:RefreshOptions()
 							CooldownTracker:RedrawDisplay()
 						else
@@ -265,12 +308,29 @@ function CooldownTracker:ValidateSpellTable()
     for i,entry in ipairs(spell_list_all) do
         local is_known_new = IsSpellKnown(entry.spellID)
         -- Hacking in a way to validate for cd changes in addition to whether it's known.
-        if entry.cooldown < CooldownTracker.db.profile.track_threshold_min then is_known_new = false end
+        if entry.cooldown < CooldownTracker.db.profile.track_threshold_min then 
+			is_known_new = false 
+		end
         entry.is_known = is_known_new
     end
 
+	CooldownTracker:ValidateBlacklist()
 	CooldownTracker:RefreshOptions()
 	CooldownTracker:RedrawDisplay()
+end
+
+function CooldownTracker:ValidateBlacklist()
+	-- Yes it's n-squared, sorry. But blacklist is probably short so 
+    --   realistically it shouldn't be too bad I think?
+    for ib,entryb in ipairs(blacklist) do
+        for i,entry in ipairs(spell_list_all) do        
+            if entry.spellID == entryb.spellID then
+                CooldownTracker:Print("Removing from monitored spells: ",entry.spellID,": ",entry.spellName)
+                CooldownTracker:RemoveSpellByID(entry.spellID)
+				break
+            end
+        end
+    end
 end
 
 -- If I remember correctly, this one is updated on tick.
@@ -328,47 +388,74 @@ function CooldownTracker:ResetSpellNumbers()
     CooldownTracker:UpdateTableText()
 end
 
+function CooldownTracker:HardResetTables()
+	wipe(spell_list_all)
+	wipe(race_spell_list)
+	wipe(class_spell_list)
+end
+
+function CooldownTracker:RemoveSpellByID(spellID)
+	for spellBookTab = 1,C_SpellBook.GetNumSpellBookSkillLines() do
+		local found_in_spell_list = self:GetTableBySpellPage(spellBookTab)
+		for i, entry in ipairs(found_in_spell_list) do
+			if entry.spellID == spellID then
+				table.remove(found_in_spell_list,i)
+				break
+			end
+		end
+	end
+end
+
 function CooldownTracker:BlacklistToggleByID(spellID)
 	if debug_print == true then CooldownTracker:Print("BlacklistToggleByID") end
 
+	local found_it = 0
     for i, entry in ipairs(spell_list_all) do
         if entry.spellID == spellID then
             -- Add to blacklist and remove from monitoredSpells
             table.insert(blacklist,entry)
-            table.remove(spell_list_all,i)
-			CooldownTracker:RefreshOptions()
-			CooldownTracker:RedrawDisplay()
-			return
+			CooldownTracker:RemoveSpellByID(spellID)
+			
+			found_it = 1
+			break
         end
     end
 
-	for i, entry in ipairs(blacklist) do
-		if entry.spellID == spellID then
-			-- Add to blacklist and remove from monitoredSpells
-			if IsSpellKnown(spellID) == true then
-				table.insert(spell_list_all,entry)
-				CooldownTracker:SortTable("cd")
+	if found_it == 0 then
+		for i, entry in ipairs(blacklist) do
+			if entry.spellID == spellID then
+				-- Add to blacklist and remove from monitoredSpells
+				if IsSpellKnown(spellID) == true then
+					local found_in_spell_list = self:GetTableBySpellPage(entry.spellBookTab)
+					table.insert(found_in_spell_list,entry)
+					CooldownTracker:LoadTables()
+					CooldownTracker:SortTable("cd")
+				end
+				table.remove(blacklist,i)
+				
+				found_it = 1
+				break
 			end
-			table.remove(blacklist,i)
-			CooldownTracker:RefreshOptions()
-			CooldownTracker:RedrawDisplay()
-			return
 		end
 	end
 
-	if debug_print == true then CooldownTracker:Print("Pre-emptively blacklisting Spell ID " .. spellID) end
-	-- If it wasn't already monitored, preemptively add it with some barebones info.
-	local spellInfo = C_Spell.GetSpellInfo(spellID)
-	local spellName, spellIcon = spellInfo.name, spellInfo.iconID
-	local spellIcon_filePath = nil
-	if spellIcon ~= nil then 
-		spellIcon_filePath = icon_file_id_to_path[spellIcon]
-	end
-	table.insert(blacklist,{spellID=spellID, spellName=spellName, cooldown=-1, lastUsed=-1, spellIcon=spellIcon, spellIcon_filePath=spellIcon_filePath, classification="offensive", is_known=true})
+	if found_it == 0 then
+		if debug_print == true then CooldownTracker:Print("Pre-emptively blacklisting Spell ID " .. spellID) end
+		-- If it wasn't already monitored, preemptively add it with some barebones info.
+		local spellInfo = C_Spell.GetSpellInfo(spellID)
+		local spellName, spellIcon = spellInfo.name, spellInfo.iconID
+		local spellIcon_filePath = nil
+		if spellIcon ~= nil then 
+			spellIcon_filePath = icon_file_id_to_path[spellIcon]
+		end
+		table.insert(blacklist,{spellID=spellID, spellName=spellName, cooldown=-1, lastUsed=-1, spellBookTab=-1, spellIcon=spellIcon, spellIcon_filePath=spellIcon_filePath, classification="offensive", is_known=true})
 
-	if debug_print == true then print("Cleansing with new blacklist.") end
-	blacklist_cleanse()
+		if debug_print == true then print("Cleansing with new blacklist.") end
+		CooldownTracker:ValidateBlacklist()
+	end
+	
+	CooldownTracker:LoadTables()
 	CooldownTracker:RefreshOptions()
 	CooldownTracker:RedrawDisplay()
-	return
+
 end
