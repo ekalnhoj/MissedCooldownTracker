@@ -15,6 +15,7 @@ local defaults = {
 	profile = {
 		enabled = true,
         learning_mode = true,
+        display_enabled = true,
         track_threshold_min = 30,
         track_threshold_max = 300,
         tick_frequency = 0.5,
@@ -91,10 +92,22 @@ options = {
 					type = "description",
 					order = 0,
 				},
+                display_enabled = {
+                    type = "toggle",
+                    arg = "display_enabled",
+                    name = "Display CDT",
+                    desc = "Whether or not the display for CooldownTracker is shown",
+                    order = 5,
+                    get = function(info) return db.display_enabled end,
+                    set = function(info, v)
+                        db.display_enabled = v
+                        if v then CooldownTracker:ShowFrame(true) else CooldownTracker:ShowFrame(false) end
+                    end,
+                },
                 learning_mode = {
                     type = "toggle",
                     arg = "learning_mode",
-                    name = L["CooldownTracker learning mode."],
+                    name = L["Learning Mode"],
                     desc = L["Whether CooldownTracker checks for new spell IDs on cooldown."],
                     order = 5,
                 },
@@ -452,8 +465,7 @@ function CooldownTracker:CDT_SlashProcessorFunc(input)
     elseif input == "hard reset" then
         hard_reset_table()
     elseif input == "redraw" then
-        CooldownTracker:UpdateIcons(true)
-        CooldownTracker:UpdateTableText()
+        CooldownTracker:RedrawDisplay()
     -- elseif input == "sort cd" then
     --     sort_table("cd")
     -- elseif input == "sort name" then

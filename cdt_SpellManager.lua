@@ -173,13 +173,14 @@ function CooldownTracker:GetAllSpellsWithCDOverThreshold()
 	local saving_spell_list = nil
 	local is_racial = nil
     for i = 1,C_SpellBook.GetNumSpellBookSkillLines() do
-		if i == 1 then 
-			saving_spell_list = race_spell_list
-			is_racial = true
-		else
-			saving_spell_list = class_spell_list
-			is_racial = false
-		end
+		-- When (if) I separate out racials again then I'll re-enable this.
+		-- if i == 1 then 
+		-- 	saving_spell_list = race_spell_list
+		-- 	is_racial = true
+		-- else
+		-- 	saving_spell_list = class_spell_list
+		-- 	is_racial = false
+		-- end
 		local skillLineInfo = C_SpellBook.GetSpellBookSkillLineInfo(i)
 		local offset, numSlots = skillLineInfo.itemIndexOffset, skillLineInfo.numSpellBookItems
 		for j = offset+1, offset+numSlots do
@@ -195,12 +196,18 @@ function CooldownTracker:GetAllSpellsWithCDOverThreshold()
 	
 				local is_in_blacklist = 0
 				for i,entry in ipairs(blacklist) do
-					if spellID == entry.spellID then is_in_blacklist = 1 end
+					if spellID == entry.spellID then
+						is_in_blacklist = 1
+						break
+					end
 				end            
 
 				local is_in_table = 0
 				for i,entry in ipairs(spell_list_all) do
-					if spellID == entry.spellID then is_in_table = 1 end
+					if spellID == entry.spellID then
+						is_in_table = 1
+						break
+					end
 				end
 
 				if not spellID then 
@@ -238,7 +245,7 @@ function CooldownTracker:GetAllSpellsWithCDOverThreshold()
 							-- is_known is probably how I'll handle different talent sets? Upon talent set swap it goes through the list and hides any spells not known.
 							table.insert(spell_list_all,{spellID=spellID, spellName=spellName, cooldown=duration, lastUsed=-1, spelIcon=spellIcon, spellIcon_filePath=spellIcon_filePath, classification="offensive", is_known=true, has_charges=has_charges, max_charges=max_charges})
 							-- And save it into the race/class spell list. 
-							table.insert(saving_spell_list,{spellID=spellID, spellName=spellName, cooldown=duration, lastUsed=-1, spelIcon=spellIcon, spellIcon_filePath=spellIcon_filePath, classification="offensive", is_known=true, has_charges=has_charges, max_charges=max_charges})
+							-- table.insert(saving_spell_list,{spellID=spellID, spellName=spellName, cooldown=duration, lastUsed=-1, spelIcon=spellIcon, spellIcon_filePath=spellIcon_filePath, classification="offensive", is_known=true, has_charges=has_charges, max_charges=max_charges})
 							CooldownTracker:SortTable("cd")
 
 							CooldownTracker:Print("Just added " .. spellName .. " to spell list.")
@@ -258,7 +265,7 @@ function CooldownTracker:ValidateSpellTable()
     for i,entry in ipairs(spell_list_all) do
         local is_known_new = IsSpellKnown(entry.spellID)
         -- Hacking in a way to validate for cd changes in addition to whether it's known.
-        if entry.cooldown < db.track_threshold_min then is_known_new = false end
+        if entry.cooldown < CooldownTracker.db.profile.track_threshold_min then is_known_new = false end
         entry.is_known = is_known_new
     end
 

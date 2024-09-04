@@ -313,11 +313,12 @@ end
 function CooldownTracker:ShowFrame(bool_val)
     if bool_val == true then 
 		if debug_print == true then CooldownTracker:Print("Showing Frame") end
-        cooldownFrame:Show() 
+        cooldownFrame:Show()
     elseif bool_val == false then 
 		if debug_print == true then CooldownTracker:Print("Hiding Frame") end
         cooldownFrame:Hide()
     end
+    self.db.profile.display_enabled = bool_val
 end
 
 -- Function to update the display text of 'spNameText'
