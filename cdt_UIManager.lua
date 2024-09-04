@@ -4,18 +4,70 @@
 -- ========================================================================= --
 -------------------------------------------------------------------------------
 
-local CDT = CooldownTracker
+local CooldownTracker = CooldownTracker
+local cooldownFrame
+local pauseButton -- file-wide local because I change the text on it when paused.
 
-function CDT:UIManager_StartupDelayed()
-    CDT:CooldownFrameStart()
+-- rows holds the display table contents.
+local rows = {}
+local n_rows = 0
+local debug_print = true
+
+function CooldownTracker:UIManager_OnInitialize()
+    debug_print = CooldownTracker.debug_print
+
+    -- Event-fired message functions registered in the main file.
+
+    CooldownTracker.need_to_redraw_display = false
+
+    CooldownTracker:MakeCooldownFrame()
+    CooldownTracker:CooldownFrameStart()
+    CooldownTracker:ShowFrame(self.db.profile.enabled)
 end
 
-function CDT:UIManager_OnTick()
-    -- CDT:Print("UIManager_OnTick")
-    -- Do nothing
+-------------------------------------------------------------------------------
+-- ========================================================================= --
+-- Event-fired message functions.
+-- ========================================================================= --
+-------------------------------------------------------------------------------
+function CooldownTracker:UIManager_StartupDelayed()
+    --Registered to CDT_API_LOADED message.
+    if debug_print == true then CooldownTracker:Print("UI StartupDelayed") end
+
+    CooldownTracker:RedrawDisplay()
+end
+
+function CooldownTracker:UIManager_OnTick()
+    -- Registered to CDT_TICK message.
+    CooldownTracker:UpdateTableText()
+end
+
+function CooldownTracker:UIManager_OnPause()
+    --Registered to CDT_PAUSE message.
+    pauseButton:SetText("Unpause Addon")
+end
+
+function CooldownTracker:UIManager_OnUnpause()
+    --Registered to CDT_UNPAUSE message.
+    pauseButton:SetText("Pause Addon")
+end
+
+function CooldownTracker:UIManager_OnEnable()
+    -- Registered to CDT_ENABLE message.
+    CooldownTracker:ShowFrame(true)
+end
+
+function CooldownTracker:UIManager_OnDisable()
+    -- Registered to CDT_DISABLE message.
+    CooldownTracker:ShowFrame(false)
 end
 
 
+-------------------------------------------------------------------------------
+-- ========================================================================= --
+-- 
+-- ========================================================================= --
+-------------------------------------------------------------------------------
 
 -- Current to do
 --   Pause doesn't work (toggle_ticking)
@@ -27,181 +79,9 @@ end
 
 -------------------------------------------------------------------------------
 -- ========================================================================= --
--- GUI Garbaggio
+-- Local GUI functions
 -- ========================================================================= --
 -------------------------------------------------------------------------------
-
-local update_icons = false
-local rows = {}
-local n_rows = 0
-local debug_print = true
-
-function CooldownTracker:UpdateIcons(new_val)
-    if new_val == nil then new_val = true end
-    update_icons = new_val
-end
-
-
--- GUI interlude
--- Create a new frame named 'CooldownTrackerFrame' with a size of 300x400
-local cooldownFrame = CreateFrame("Frame", "CooldownTrackerFrame", UIParent, "BackdropTemplate")
--- cooldownFrame:SetSize(300, 400)
--- Position the frame 10 pixels from the left of the screen
--- cooldownFrame:SetPoint("LEFT", 0, 10)
--- Set the backdrop of the frame
-cooldownFrame:SetBackdrop({
-    bgFile = "Interface\\DialogFrame\\UI-DialogBox-Background",
-    edgeFile = "Interface\\DialogFrame\\UI-DialogBox-Border",
-    tile = true, tileSize = 32, edgeSize = 32,
-    insets = { left = 11, right = 12, top = 12, bottom = 11 }
-})
--- Set the background color of the frame to black
-cooldownFrame:SetBackdropColor(0, 0, 0, 1)
--- Show the frame initially
-cooldownFrame:Show()
-
-
-
--- Add a reset button to the bottom.
-if true then -- Just making a code block
-    -- Create a new frame for the button
-    local resetButtonFrame = CreateFrame("Frame", "resetButtonFrame", cooldownFrame)
-    resetButtonFrame:SetSize(150, 30)
-    resetButtonFrame:SetPoint("BOTTOMLEFT", cooldownFrame, "BOTTOMLEFT", 5, 10)
-
-    -- Create the button and add it to the frame
-    local resetButton = CreateFrame("Button", "resetButton", resetButtonFrame, "UIPanelButtonTemplate")
-    resetButton:SetPoint("CENTER", resetButtonFrame, "CENTER", 0, 0)
-    resetButton:SetSize(140, 22)
-    resetButton:SetText("Reset Spell Numbers")
-
-    -- Set the click handler for the button
-    resetButton:SetScript("OnClick", function()
-        reset_spell_numbers()
-    end)
-end
-
--- Add a "pause" button to the bottom as well.
-if true then -- Just making a code block
-    -- Create a new frame for the button
-    local pauseButtonFrame = CreateFrame("Frame", "pauseButtonFrame", cooldownFrame)
-    pauseButtonFrame:SetSize(150, 30)
-    pauseButtonFrame:SetPoint("BOTTOMRIGHT", cooldownFrame, "BOTTOMRIGHT", -5, 10)
-
-    -- Create the button and add it to the frame
-    local pauseButton = CreateFrame("Button", "pauseButton", pauseButtonFrame, "UIPanelButtonTemplate")
-    pauseButton:SetPoint("CENTER", pauseButtonFrame, "CENTER", 0, 0)
-    pauseButton:SetSize(140, 22)
-    pauseButton:SetText("Pause Addon")
-
-    -- Set the click handler for the button
-    pauseButton:SetScript("OnClick", function()
-        toggle_ticking()
-    end)
-end
-
-function CDT:update_frame_info()
-    local coordinate_x,coordinate_y,size_x,size_y = cooldownFrame:GetRect()
-    self.db.profile.coordinate_x = coordinate_x
-    self.db.profile.coordinate_y = coordinate_y
-    self.db.profile.size_x = size_x
-    self.db.profile.size_y = size_y
-end
-
-local function allow_frame_movement(bool_val,depth)
-    depth = depth or 1
-    if debug_print == true then print("Setting movable to ",bool_val) end
-
-    cooldownFrame:SetMovable(bool_val)
-    cooldownFrame:EnableMouse(bool_val)
-    if bool_val == true then
-        cooldownFrame:SetScript("OnMouseDown",function(self, button)
-            if button == "LeftButton" then 
-                self:StartMoving()
-            else
-                -- == Do nothing
-            end
-        end)
-        cooldownFrame:SetScript("OnMouseUp",function(self,button)
-            self:StopMovingOrSizing()
-            -- Grab the coordinates for saving
-            CDT:update_frame_info()
-        end)
-    end
-
-    -- I know there must be a way to make "exclusive turn it on" work but I'm failing. 
-    --   I'll just have to trust the user not to get into trouble.
-    -- if bool_val == true and depth <= 1 then
-    --     allow_frame_resizing(false,depth+1) -- Re-set moving options (seems to be needed?)
-    --     CDT_Draw_Options()
-    -- end
-end
-
-local function allow_frame_resizing(bool_val,depth)
-    depth = depth or 1
-    if debug_print == true then print("Setting sizable to ",bool_val) end
-
-    cooldownFrame:SetResizable(bool_val)
-    cooldownFrame:EnableMouse(bool_val)
-    if bool_val == true then
-        cooldownFrame:SetScript("OnMouseDown",function(self, button)
-            if button == "LeftButton" then 
-                self:StartSizing() -- defaults to bottom right
-            else
-                -- == Do nothing
-            end
-        end)
-        cooldownFrame:SetScript("OnMouseUp",function(self,button)
-            self:StopMovingOrSizing()
-            -- Grab the coordinates for saving
-            CDT:update_frame_info()
-        end)
-    end
-
-    -- I know there must be a way to make "exclusive turn it on" work but I'm failing. 
-    --   I'll just have to trust the user not to get into trouble.
-    -- if bool_val == true and depth <= 1 then
-    --     allow_frame_movement(false,depth+1) -- Re-set moving options (seems to be needed?)
-    --     CDT_Draw_Options()
-    -- end
-end
-
-local function adjust_changeability(new_status)
-    local new_status_lower = string.lower(new_status)
-    CDT.db.profile.frame_adjustability = new_status_lower
-    if new_status_lower == "movable" then
-        if debug_print == true then print("Movable") end
-        allow_frame_resizing(false)
-        allow_frame_movement(true)
-        
-    elseif new_status_lower == "resizable" then 
-        if debug_print == true then print("Resizable") end
-        allow_frame_movement(false)
-        allow_frame_resizing(true)
-    else
-        if debug_print == true then print("Neither movable or resizable") end
-        allow_frame_movement(false)
-        allow_frame_resizing(false)        
-    end
-end
-
-function CDT:CooldownFrameStart()
-    -- Some GUI startup
-	cooldownFrame:SetSize(CDT.db.profile.size_x,CDT.db.profile.size_y)
-    cooldownFrame:SetPoint("BOTTOMLEFT", CDT.db.profile.coordinate_x, CDT.db.profile.coordinate_y)
-end
-
-function CooldownTracker:ShowFrame(bool_val)
-    if bool_val == true then 
-		if debug_print == true then CooldownTracker:Print("Showing Frame") end
-        cooldownFrame:Show() 
-    elseif bool_val == false then 
-		if debug_print == true then CooldownTracker:Print("Hiding Frame") end
-        cooldownFrame:Hide()
-    end
-end
-
-
 local function make_table_row(parent,y_offset)
     y_offset = y_offset or 0
     local y_size = 12
@@ -254,13 +134,200 @@ local function make_table_row(parent,y_offset)
     return row_container
 end
 
+-- === Here on they're kinda unused.
+local function allow_frame_movement(bool_val,depth)
+    depth = depth or 1
+    if debug_print == true then print("Setting movable to ",bool_val) end
+
+    cooldownFrame:SetMovable(bool_val)
+    cooldownFrame:EnableMouse(bool_val)
+    if bool_val == true then
+        cooldownFrame:SetScript("OnMouseDown",function(self, button)
+            if button == "LeftButton" then 
+                self:StartMoving()
+            else
+                -- == Do nothing
+            end
+        end)
+        cooldownFrame:SetScript("OnMouseUp",function(self,button)
+            self:StopMovingOrSizing()
+            -- Grab the coordinates for saving
+            CooldownTracker:update_frame_info()
+        end)
+    end
+
+    -- I know there must be a way to make "exclusive turn it on" work but I'm failing. 
+    --   I'll just have to trust the user not to get into trouble.
+    -- if bool_val == true and depth <= 1 then
+    --     allow_frame_resizing(false,depth+1) -- Re-set moving options (seems to be needed?)
+    --     CooldownTracker_Draw_Options()
+    -- end
+end
+
+local function allow_frame_resizing(bool_val,depth)
+    depth = depth or 1
+    if debug_print == true then print("Setting sizable to ",bool_val) end
+
+    cooldownFrame:SetResizable(bool_val)
+    cooldownFrame:EnableMouse(bool_val)
+    if bool_val == true then
+        cooldownFrame:SetScript("OnMouseDown",function(self, button)
+            if button == "LeftButton" then 
+                self:StartSizing() -- defaults to bottom right
+            else
+                -- == Do nothing
+            end
+        end)
+        cooldownFrame:SetScript("OnMouseUp",function(self,button)
+            self:StopMovingOrSizing()
+            -- Grab the coordinates for saving
+            CooldownTracker:update_frame_info()
+        end)
+    end
+
+    -- I know there must be a way to make "exclusive turn it on" work but I'm failing. 
+    --   I'll just have to trust the user not to get into trouble.
+    -- if bool_val == true and depth <= 1 then
+    --     allow_frame_movement(false,depth+1) -- Re-set moving options (seems to be needed?)
+    --     CooldownTracker_Draw_Options()
+    -- end
+end
+
+local function adjust_changeability(new_status)
+    local new_status_lower = string.lower(new_status)
+    CooldownTracker.db.profile.frame_adjustability = new_status_lower
+    if new_status_lower == "movable" then
+        if debug_print == true then print("Movable") end
+        allow_frame_resizing(false)
+        allow_frame_movement(true)
+        
+    elseif new_status_lower == "resizable" then 
+        if debug_print == true then print("Resizable") end
+        allow_frame_movement(false)
+        allow_frame_resizing(true)
+    else
+        if debug_print == true then print("Neither movable or resizable") end
+        allow_frame_movement(false)
+        allow_frame_resizing(false)        
+    end
+end
+
+
+-------------------------------------------------------------------------------
+-- ========================================================================= --
+-- GUI Small Utility Functions
+-- ========================================================================= --
+-------------------------------------------------------------------------------
+function CooldownTracker:toggle_ticking()
+    local is_running = not(self.paused)
+    if is_running == true then  
+        CooldownTracker:SendMessage("CDT_PAUSE")
+    else
+        CooldownTracker:SendMessage("CDT_UNPAUSE") 
+    end
+end
+
+function CooldownTracker.RedrawDisplay()
+    CooldownTracker.need_to_redraw_display = true 
+end
+
+function CooldownTracker:update_frame_info()
+    local coordinate_x,coordinate_y,size_x,size_y = cooldownFrame:GetRect()
+    self.db.profile.coordinate_x = coordinate_x
+    self.db.profile.coordinate_y = coordinate_y
+    self.db.profile.size_x = size_x
+    self.db.profile.size_y = size_y
+end
+
+-------------------------------------------------------------------------------
+-- ========================================================================= --
+-- Addon-wide GUI Functions
+-- ========================================================================= --
+-------------------------------------------------------------------------------
+function CooldownTracker:MakeCooldownFrame()
+    -- GUI interlude
+    -- Create a new frame named 'CooldownTrackerFrame' with a size of 300x400
+    cooldownFrame = CreateFrame("Frame", "CooldownTrackerFrame", UIParent, "BackdropTemplate")
+    -- cooldownFrame:SetSize(300, 400)
+    -- Position the frame 10 pixels from the left of the screen
+    -- cooldownFrame:SetPoint("LEFT", 0, 10)
+    -- Set the backdrop of the frame
+    cooldownFrame:SetBackdrop({
+        bgFile = "Interface\\DialogFrame\\UI-DialogBox-Background",
+        edgeFile = "Interface\\DialogFrame\\UI-DialogBox-Border",
+        tile = true, tileSize = 32, edgeSize = 32,
+        insets = { left = 11, right = 12, top = 12, bottom = 11 }
+    })
+    -- Set the background color of the frame to black
+    cooldownFrame:SetBackdropColor(0, 0, 0, 1)
+    -- Show the frame initially
+    cooldownFrame:Show()
+
+    -- Add a reset button to the bottom.
+    if true then -- Just making a code block
+        -- Create a new frame for the button
+        local resetButtonFrame = CreateFrame("Frame", "resetButtonFrame", cooldownFrame)
+        resetButtonFrame:SetSize(150, 30)
+        resetButtonFrame:SetPoint("BOTTOMLEFT", cooldownFrame, "BOTTOMLEFT", 5, 10)
+
+        -- Create the button and add it to the frame
+        local resetButton = CreateFrame("Button", "resetButton", resetButtonFrame, "UIPanelButtonTemplate")
+        resetButton:SetPoint("CENTER", resetButtonFrame, "CENTER", 0, 0)
+        resetButton:SetSize(140, 22)
+        resetButton:SetText("Reset Spell Numbers")
+
+        -- Set the click handler for the button
+        resetButton:SetScript("OnClick", function()
+            CooldownTracker:ResetSpellNumbers()
+        end)
+    end
+
+    -- Add a "pause" button to the bottom as well.
+    if true then -- Just making a code block
+        -- Create a new frame for the button
+        local pauseButtonFrame = CreateFrame("Frame", "pauseButtonFrame", cooldownFrame)
+        pauseButtonFrame:SetSize(150, 30)
+        pauseButtonFrame:SetPoint("BOTTOMRIGHT", cooldownFrame, "BOTTOMRIGHT", -5, 10)
+
+        -- Create the button and add it to the frame
+        pauseButton = CreateFrame("Button", "pauseButton", pauseButtonFrame, "UIPanelButtonTemplate")
+        pauseButton:SetPoint("CENTER", pauseButtonFrame, "CENTER", 0, 0)
+        pauseButton:SetSize(140, 22)
+        pauseButton:SetText("Pause Addon")
+
+        -- Set the click handler for the button
+        pauseButton:SetScript("OnClick", function()
+            CooldownTracker:toggle_ticking()
+        end)
+    end
+end
+
+function CooldownTracker:CooldownFrameStart()
+    if debug_print == true then CooldownTracker:Print("UI: CooldownFrameStart") end
+    -- Some GUI startup
+    CooldownTracker:ShowFrame(true)
+	cooldownFrame:SetSize(CooldownTracker.db.profile.size_x,CooldownTracker.db.profile.size_y)
+    cooldownFrame:SetPoint("BOTTOMLEFT", CooldownTracker.db.profile.coordinate_x, CooldownTracker.db.profile.coordinate_y)
+end
+
+function CooldownTracker:ShowFrame(bool_val)
+    if bool_val == true then 
+		if debug_print == true then CooldownTracker:Print("Showing Frame") end
+        cooldownFrame:Show() 
+    elseif bool_val == false then 
+		if debug_print == true then CooldownTracker:Print("Hiding Frame") end
+        cooldownFrame:Hide()
+    end
+end
 
 -- Function to update the display text of 'spNameText'
 function CooldownTracker:UpdateTableText()
     local spell_list_all = CooldownTracker:GetSpellList()
     if not spell_list_all then return end
 
-    if update_icons == true then
+    -- Embedding this in here instead of on its own because I only want to 
+    --   try to redraw the thing at this particular step of updating the table.
+    if CooldownTracker.need_to_redraw_display == true then
         -- Redraw the tables. First delete the old things.
         -- Clear the frame
         for k,row_entry in pairs(rows) do
@@ -271,7 +338,7 @@ function CooldownTracker:UpdateTableText()
         end
         rows = {}
 
-		CooldownTracker:UpdateIcons(false)
+        CooldownTracker.need_to_redraw_display = false
     end
 
     -- This might should be its own table but for now it's not.
@@ -526,4 +593,3 @@ function CooldownTracker:UpdateTableText()
         end
     end
 end
-

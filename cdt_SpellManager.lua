@@ -13,6 +13,10 @@ local icon_file_id_to_path
 local debug_print
 
 function CooldownTracker:SpellManager_OnInitialize()
+	debug_print = CooldownTracker.debug_print
+	
+	-- Event-fired message functions registered in the main file.
+	
     -- Set up some defaults
 	if self.db.profile.blacklist == nil then self.db.profile.blacklist = {} end
 	if self.db.race.race_spell_list == nil then self.db.race.race_spell_list = {} end
@@ -24,9 +28,17 @@ function CooldownTracker:SpellManager_OnInitialize()
 	race_spell_list = class_spell_list -- self.db.race.race_spell_list
 end
 
-function CooldownTracker:SpellManager_StartupDelayed()
-    CooldownTracker:LoadTables()
 
+-------------------------------------------------------------------------------
+-- ========================================================================= --
+-- Event-fired message functions.
+-- ========================================================================= --
+-------------------------------------------------------------------------------
+function CooldownTracker:SpellManager_StartupDelayed()
+	-- Registered to CDT_API_LOADED message.
+	if debug_print == true then CooldownTracker:Print("SM StartupDelayed") end
+
+    CooldownTracker:LoadTables()
 
     -- Register important events that couldn't be registered earlier.
 	-- CooldownTracker:RegisterEvent("ACTIVE_TALENT_GROUP_CHANGED","CDT_TalentChangeUpdate",1)
@@ -37,21 +49,53 @@ function CooldownTracker:SpellManager_StartupDelayed()
 	-- CooldownTracker:RegisterEvent("SELECTED_LOADOUT_CHANGED","CDT_TalentChangeUpdate",4)
 	-- CooldownTracker:RegisterEvent("ACTIVE_COMBAT_CONFIG_CHANGED","CDT_TalentChangeUpdate",5)
 
-
     -- Load the art files
 	icon_file_id_to_path = _G["ArtTexturePaths"]
 end
 
 function CooldownTracker:SpellManager_OnTick()
-    -- CooldownTracker:Print("SpellManager_OnTick")
+    -- Registered to CDT_TICK message.
     if self.db.profile.learning_mode == true then
 		CooldownTracker:GetAllSpellsWithCDOverThreshold()
 	else
-		CooldownTracker:Print("Not learning")
+		if debug_print == true then CooldownTracker:Print("Not learning") end
 	end
 	CooldownTracker:UpdateCooldowns()
 end
 
+function CooldownTracker:SpellManager_OnPause()
+    -- Registered to CDT_PAUSE message.
+end
+
+function CooldownTracker:SpellManager_OnUnpause()
+    -- Registered to CDT_UNPAUSE message.
+end
+
+function CooldownTracker:SpellManager_OnEnable()
+	-- Registered to CDT_ENABLE message.
+end
+
+function CooldownTracker:SpellManager_OnDisable()
+	-- Registered to CDT_DISABLE message.
+end
+
+-- === Not-common events
+function CooldownTracker:CDT_TalentChangeUpdate(args)
+	if debug_print == true then CooldownTracker:Print("Talent tree changed.") end
+	-- This may not be needed.
+	CooldownTracker:LoadTables()
+	-- This is likely needed.
+	CooldownTracker:ValidateSpellTable()
+	CooldownTracker:RefreshOptions()
+	
+    CooldownTracker:RedrawDisplay(true)
+end
+
+-------------------------------------------------------------------------------
+-- ========================================================================= --
+-- 
+-- ========================================================================= --
+-------------------------------------------------------------------------------
 function CooldownTracker:GetSpellList()
 	if spell_list_all == nil then return {} else return spell_list_all end
 end
@@ -61,13 +105,13 @@ function CooldownTracker:GetBlacklist()
 end
 
 function CooldownTracker:LoadTables()
-	spell_list_all = {}
+	spell_list_all = self.db.class.class_spell_list
     blacklist = self.db.profile.blacklist
 
 	-- Maybe-future feature: loading by spec name rather than just by class.
-	for i,v in ipairs(self.db.class.class_spell_list) do
-		table.insert(spell_list_all, v)
-	end
+	-- for i,v in ipairs(self.db.class.class_spell_list) do
+	-- 	table.insert(spell_list_all, v)
+	-- end
 
     -- I've decided to delay this (I'd need to adjust the spell field to note 
     --   if I thought it was a racial or class spell, and that will be 
@@ -199,7 +243,7 @@ function CooldownTracker:GetAllSpellsWithCDOverThreshold()
 
 							CooldownTracker:Print("Just added " .. spellName .. " to spell list.")
 							CooldownTracker:RefreshOptions()
-							CooldownTracker:UpdateIcons()
+							CooldownTracker:RedrawDisplay()
 						else
 							-- Do nothing.
 						end
@@ -219,7 +263,7 @@ function CooldownTracker:ValidateSpellTable()
     end
 
 	CooldownTracker:RefreshOptions()
-	CooldownTracker:UpdateIcons()
+	CooldownTracker:RedrawDisplay()
 end
 
 -- If I remember correctly, this one is updated on tick.
@@ -278,7 +322,7 @@ function CooldownTracker:ResetSpellNumbers()
 end
 
 function CooldownTracker:BlacklistToggleByID(spellID)
-	CooldownTracker:Print("BlacklistToggleByID")
+	if debug_print == true then CooldownTracker:Print("BlacklistToggleByID") end
 
     for i, entry in ipairs(spell_list_all) do
         if entry.spellID == spellID then
@@ -286,7 +330,7 @@ function CooldownTracker:BlacklistToggleByID(spellID)
             table.insert(blacklist,entry)
             table.remove(spell_list_all,i)
 			CooldownTracker:RefreshOptions()
-			CooldownTracker:UpdateIcons()
+			CooldownTracker:RedrawDisplay()
 			return
         end
     end
@@ -300,12 +344,12 @@ function CooldownTracker:BlacklistToggleByID(spellID)
 			end
 			table.remove(blacklist,i)
 			CooldownTracker:RefreshOptions()
-			CooldownTracker:UpdateIcons()
+			CooldownTracker:RedrawDisplay()
 			return
 		end
 	end
 
-	CooldownTracker:Print("Pre-emptively blacklisting Spell ID " .. spellID)
+	if debug_print == true then CooldownTracker:Print("Pre-emptively blacklisting Spell ID " .. spellID) end
 	-- If it wasn't already monitored, preemptively add it with some barebones info.
 	local spellInfo = C_Spell.GetSpellInfo(spellID)
 	local spellName, spellIcon = spellInfo.name, spellInfo.iconID
@@ -318,6 +362,6 @@ function CooldownTracker:BlacklistToggleByID(spellID)
 	if debug_print == true then print("Cleansing with new blacklist.") end
 	blacklist_cleanse()
 	CooldownTracker:RefreshOptions()
-	CooldownTracker:UpdateIcons()
+	CooldownTracker:RedrawDisplay()
 	return
 end
