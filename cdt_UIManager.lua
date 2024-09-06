@@ -239,6 +239,24 @@ function CooldownTracker:update_frame_info()
     self.db.profile.size_y = size_y
 end
 
+function CooldownTracker:EnableFrameMove(do_enable)
+    if do_enable == true then
+        cooldownFrame:EnableMouse(true)
+        cooldownFrame:SetMovable(true)
+        cooldownFrame:RegisterForDrag("LeftButton")
+        cooldownFrame:SetScript("OnDragStart", cooldownFrame.StartMoving)
+        cooldownFrame:SetScript("OnDragStop", function(self)
+            self:StopMovingOrSizing()
+            CooldownTracker.db.profile.coordinate_x, CooldownTracker.db.profile.coordinate_y = self:GetLeft(), self:GetBottom()
+        end)
+    else
+        cooldownFrame:EnableMouse(false)
+        cooldownFrame:SetMovable(false)
+        cooldownFrame:SetScript("OnDragStart", nil)
+        cooldownFrame:SetScript("OnDragStop", nil)
+    end
+end
+
 -------------------------------------------------------------------------------
 -- ========================================================================= --
 -- Addon-wide GUI Functions

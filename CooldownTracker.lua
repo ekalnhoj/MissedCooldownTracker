@@ -19,6 +19,7 @@ local defaults = {
         track_threshold_min = 30,
         track_threshold_max = 300,
         tick_frequency = 0.5,
+        enable_moving=false,
         -- Below are not in options menu 
         frame_adjustability = "None",
         coordinate_x = 6.66665506362915,
@@ -105,12 +106,24 @@ options = {
                         if v then CooldownTracker:ShowFrame(true) else CooldownTracker:ShowFrame(false) end
                     end,
                 },
+                enable_moving = {
+                    type = "toggle",
+                    arg = "enable_moving",
+                    name = "Enable Moving",
+                    desc = "Allow the CDT window to be moved.",
+                    order = 6,
+                    get = function(info) return db.enable_moving end,
+                    set = function(info, v)
+                        db.enable_moving = v
+                        if v then CooldownTracker:EnableFrameMove(true) else CooldownTracker:EnableFrameMove(false) end
+                    end,
+                },
                 learning_mode = {
                     type = "toggle",
                     arg = "learning_mode",
                     name = L["Learning Mode"],
                     desc = L["Whether CooldownTracker checks for new spell IDs on cooldown."],
-                    order = 5,
+                    order = 8,
                 },
                 -- I don't remember what this is for so I'm gonna keep it hidden.
                 -- periodic_save = {
