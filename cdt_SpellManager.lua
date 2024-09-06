@@ -14,6 +14,7 @@ local function GetSpecIdx() return GetSpecialization()+2 end
 local spell_list_all, race_spell_list, class_spell_list, spec_spell_list, blacklist
 local icon_file_id_to_path
 local debug_print
+local recently_cast = {}
 
 function CooldownTracker:SpellManager_OnInitialize()
 	debug_print = CooldownTracker.debug_print
@@ -41,6 +42,9 @@ function CooldownTracker:SpellManager_StartupDelayed()
 	-- CooldownTracker:RegisterEvent("PLAYER_TALENT_UPDATE","CDT_TalentChangeUpdate",3)
 	-- CooldownTracker:RegisterEvent("SELECTED_LOADOUT_CHANGED","CDT_TalentChangeUpdate",4)
 	-- CooldownTracker:RegisterEvent("ACTIVE_COMBAT_CONFIG_CHANGED","CDT_TalentChangeUpdate",5)
+
+	-- Uncomment if change mind on how to do the loop in updateCooldowns.
+	-- CooldownTracker:RegisterEvent("UNIT_SPELLCAST_SUCCEEDED", "OnSpellCastSuccess")
 
     -- Load the art files
 	icon_file_id_to_path = _G["ArtTexturePaths"]
@@ -82,6 +86,14 @@ function CooldownTracker:CDT_TalentChangeUpdate(args)
 	CooldownTracker:RefreshOptions()
 	
     CooldownTracker:RedrawDisplay(true)
+end
+
+function CooldownTracker:OnSpellCastSuccess(event, unitTarget, castGUID, spellID)
+    if unitTarget == "player" then        
+		-- Get entry by spellID
+		-- Set current time
+		recently_cast[spellID] = true
+    end
 end
 
 -------------------------------------------------------------------------------
@@ -336,6 +348,13 @@ end
 -- If I remember correctly, this one is updated on tick.
 function CooldownTracker:UpdateCooldowns()
     local curr_time = GetTime()
+	-- for k,v in pairs(recently_cast) do
+	-- 	-- I like the idea of using this loop instead of the other one; however,]
+	-- 	--   upon thinking about it, I realized that way - updating the start
+	-- 	--   time only when cast - won't catch when cooldowns come up early 
+	-- 	--   (e.g. if there's a proc or if cooldowns are reduced by procs). 
+	-- end
+	
     for _, spellData in ipairs(spell_list_all) do
 		local spellInfo = C_Spell.GetSpellInfo(spellData.spellID)
 		local spellCooldown = C_Spell.GetSpellCooldown(spellData.spellID)
