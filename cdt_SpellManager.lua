@@ -16,6 +16,8 @@ local icon_file_id_to_path
 local debug_print
 local recently_cast = {}
 
+local tick_counter = 0
+
 function CooldownTracker:SpellManager_OnInitialize()
 	debug_print = CooldownTracker.debug_print
 
@@ -33,6 +35,7 @@ function CooldownTracker:SpellManager_StartupDelayed()
 	if debug_print == true then CooldownTracker:Print("SM StartupDelayed") end
 
     CooldownTracker:LoadTables()
+	CooldownTracker:SortTable("cd")
 
     -- Register important events that couldn't be registered earlier.
 	-- CooldownTracker:RegisterEvent("ACTIVE_TALENT_GROUP_CHANGED","CDT_TalentChangeUpdate",1)
@@ -58,6 +61,12 @@ function CooldownTracker:SpellManager_OnTick()
 		if debug_print == true then CooldownTracker:Print("Not learning") end
 	end
 	CooldownTracker:UpdateCooldowns()
+
+	tick_counter = tick_counter+1
+	if tick_counter > self.db.profile.track_threshold_min then
+		self:SaveLastUsedTimes()
+		tick_counter = 0
+	end
 end
 
 function CooldownTracker:SpellManager_OnPause()
@@ -83,6 +92,7 @@ function CooldownTracker:CDT_TalentChangeUpdate(args)
 	CooldownTracker:LoadTables()
 	-- This is likely needed.
 	CooldownTracker:ValidateSpellTable()
+	CooldownTracker:SortTable("cd")
 	CooldownTracker:RefreshOptions()
 	
     CooldownTracker:RedrawDisplay(true)
@@ -172,17 +182,23 @@ function CooldownTracker:LoadTables()
 
 	-- Reset the table
 	spell_list_all = {}
+	-- If it's been super long then we reset the numbers here.
+	local curr_time = GetTime()
+	local reset_thresh = 3600
 
 	-- Load race-specific spells.
 	for i,v in ipairs(race_spell_list) do
+		if curr_time - v.lastUsed > reset_thresh then v.lastUsed = curr_time end
 		table.insert(spell_list_all, v)
 	end
 
 	for i,v in ipairs(class_spell_list) do
+		if curr_time - v.lastUsed > reset_thresh then v.lastUsed = curr_time end
 		table.insert(spell_list_all, v)
 	end	
 	
 	for i,v in ipairs(spec_spell_list) do
+		if curr_time - v.lastUsed > reset_thresh then v.lastUsed = curr_time end
 		table.insert(spell_list_all, v)
 	end	
 end
@@ -304,6 +320,7 @@ function CooldownTracker:GetAllSpellsWithCDOverThreshold()
 
 							CooldownTracker:Print("Just added " .. spellName .. " to spell list.")
 							CooldownTracker:LoadTables()
+							CooldownTracker:SortTable("cd")
 							CooldownTracker:RefreshOptions()
 							CooldownTracker:RedrawDisplay()
 						else
@@ -343,6 +360,38 @@ function CooldownTracker:ValidateBlacklist()
             end
         end
     end
+end
+
+function CooldownTracker:SaveLastUsedTimes()
+	-- Think saving last used times to files every... minimum_duration seconds
+	--   seems reasonable and kinda low overhead?
+	-- Idea is that if you have to reload mid-fight or mid-dungeon you don't
+	--   want to lose the last used time. Also honestly some of it is that I 
+	--   hate logging in and seeing a ridiculously-large number.
+	for i_s,entry_s in ipairs(spell_list_all) do
+		local which_list = entry_s.spellBookTab
+		if which_list == 1 then
+			for i,v in ipairs(race_spell_list) do
+				if v.spellID == entry_s.spellID then
+					v.lastUsed = entry_s.lastUsed
+				end
+			end
+
+		elseif which_list == 2 then
+			for i,v in ipairs(class_spell_list) do
+				if v.spellID == entry_s.spellID then
+					v.lastUsed = entry_s.lastUsed
+				end
+			end
+
+		else
+			for i,v in ipairs(spec_spell_list) do
+				if v.spellID == entry_s.spellID then
+					v.lastUsed = entry_s.lastUsed
+				end
+			end
+		end
+	end
 end
 
 -- If I remember correctly, this one is updated on tick.
@@ -474,6 +523,7 @@ function CooldownTracker:BlacklistToggleByID(spellID)
 	end
 	
 	CooldownTracker:LoadTables()
+	CooldownTracker:SortTable("cd")
 	CooldownTracker:RefreshOptions()
 	CooldownTracker:RedrawDisplay()
 
