@@ -5,7 +5,7 @@
 -------------------------------------------------------------------------------
 
 -- Local copy of the addon.
-local CooldownTracker = CooldownTracker
+local CooldownTracker = MissedCooldownTracker
 
 
 local race_spell_page = 1

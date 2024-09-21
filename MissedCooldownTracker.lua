@@ -2,9 +2,9 @@
 
 local debug_print = false
 
-CooldownTracker = LibStub("AceAddon-3.0"):NewAddon("CooldownTracker","AceConsole-3.0","AceEvent-3.0")
-local CooldownTracker = CooldownTracker
-local L = LibStub("AceLocale-3.0"):GetLocale("CooldownTracker", false)
+MissedCooldownTracker = LibStub("AceAddon-3.0"):NewAddon("MissedCooldownTracker","AceConsole-3.0","AceEvent-3.0")
+local CooldownTracker = MissedCooldownTracker
+local L = LibStub("AceLocale-3.0"):GetLocale("MissedCooldownTracker", false)
 
 
 -- Our db upvalue and db defaults
@@ -260,7 +260,7 @@ function CooldownTracker:RefreshOptions()
 	-- options.args.spell_list.args.spell_list.args = new_spell_list
 	-- options.args.spell_list.args.blacklist.args = new_black_list
 	
-    LibStub("AceConfigRegistry-3.0"):NotifyChange("CooldownTracker")
+    LibStub("AceConfigRegistry-3.0"):NotifyChange("MissedCooldownTracker")
 end
 
 function CooldownTracker:OnProfileChanged(event, database, newProfileKey)
@@ -275,7 +275,7 @@ end
 -- ========================================================================= --
 -------------------------------------------------------------------------------
 function CooldownTracker:OnInitialize()
-    if debug_print == true then CooldownTracker:Print("CooldownTracker Initialized!") end
+    if debug_print == true then CooldownTracker:Print("MissedCooldownTracker Initialized!") end
 
     CooldownTracker.debug_print = debug_print
     CooldownTracker.paused = false
@@ -283,7 +283,7 @@ function CooldownTracker:OnInitialize()
 
     -- Code that you want to run when the addon is first loaded goes here.
     -- Set up our database
-	self.db = LibStub("AceDB-3.0"):New("CooldownTrackerDB", defaults, true)
+	self.db = LibStub("AceDB-3.0"):New("MissedCooldownTrackerDB", defaults, true)
 	self.db.RegisterCallback(self, "OnProfileChanged", "OnProfileChanged")
 	self.db.RegisterCallback(self, "OnProfileCopied", "OnProfileChanged")
 	self.db.RegisterCallback(self, "OnProfileReset", "OnProfileChanged")
@@ -291,10 +291,10 @@ function CooldownTracker:OnInitialize()
 	db = self.db.profile
 
 	-- Register options table and slash command
-	LibStub("AceConfigRegistry-3.0"):RegisterOptionsTable("CooldownTracker", options)
-	self:RegisterChatCommand("cooldowntracker", function() LibStub("AceConfigDialog-3.0"):Open("CooldownTracker") end)
-    self:RegisterChatCommand("cdt", function() LibStub("AceConfigDialog-3.0"):Open("CooldownTracker") end)
-	LibStub("AceConfigDialog-3.0"):AddToBlizOptions("CooldownTracker", "CooldownTracker")
+	LibStub("AceConfigRegistry-3.0"):RegisterOptionsTable("MissedCooldownTracker", options)
+	self:RegisterChatCommand("missedcooldowntracker", function() LibStub("AceConfigDialog-3.0"):Open("MissedCooldownTracker") end)
+    self:RegisterChatCommand("cdt", function() LibStub("AceConfigDialog-3.0"):Open("MissedCooldownTracker") end)
+	LibStub("AceConfigDialog-3.0"):AddToBlizOptions("MissedCooldownTracker", "Missed Cooldown Tracker")
 	-- Register my own slash commands
 	self:RegisterChatCommand("cdt_other", "CDT_SlashProcessorFunc")
 

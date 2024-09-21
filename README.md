@@ -26,7 +26,7 @@ Honestly though I keep my addon with Learning Mode enabled and it seems fine, I 
 
 
 #### How does it learn the spells?
-By default, the addon is in "Learning Mode", meaning every "tick" it will check to see if any spells are on cooldown. For spells without charges, the WoW API only gives cooldown numbers for the spells when they are actually on cooldown*. For spells with charges, the WoW API can retrieve the cooldown without having to use them. 
+By default, the addon is in "Learning Mode", meaning every "tick" it will check to see if any spells are on cooldown. For spells without charges, the WoW API only gives cooldown numbers for the spells when they are actually on cooldown\*. For spells with charges, the WoW API can retrieve the cooldown without having to use them. 
 
 
 

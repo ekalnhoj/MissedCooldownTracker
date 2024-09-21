@@ -4,7 +4,7 @@
 -- ========================================================================= --
 -------------------------------------------------------------------------------
 
-local CooldownTracker = CooldownTracker
+local CooldownTracker = MissedCooldownTracker
 local cooldownFrame
 local pauseButton -- file-wide local because I change the text on it when paused.
 

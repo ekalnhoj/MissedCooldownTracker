@@ -1,8 +1,8 @@
 ## Interface: 110002
-## Title: CooldownTracker
+## Title: Missed Cooldown Tracker
 ## Author: John Lake
 ## Version: 1.0
-## SavedVariables: CooldownTrackerDB
+## SavedVariables: MissedCooldownTrackerDB
 
 
 
@@ -25,7 +25,7 @@ Locales\Locale-enUS.lua
 Locales\Locale-esES.lua
 
 # Core files
-CooldownTracker.lua
+MissedCooldownTracker.lua
 ArtTextureID.lua
-cdt_SpellManager.lua
-cdt_UIManager.lua
+mcdt_SpellManager.lua
+mcdt_UIManager.lua
