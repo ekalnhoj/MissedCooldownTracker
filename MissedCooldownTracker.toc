@@ -22,7 +22,6 @@ Libs\AceConfig-3.0\AceConfig-3.0.xml
 
 # Locale files
 Locales\Locale-enUS.lua
-Locales\Locale-esES.lua
 
 # Core files
 MissedCooldownTracker.lua

@@ -57,13 +57,13 @@ end
 -- A default options table.
 options = {
 	type = "group",
-	name = L["CooldownTracker"],
-	desc = L["CooldownTracker"],
+	name = L["MissedCooldownTracker"],
+	desc = L["MissedCooldownTracker"],
 	args = {
 		enabled = {
 			type = "toggle",
-			name = L["Enable CooldownTracker"],
-			desc = L["Enable or disable CooldownTracker"],
+			name = L["Enable MissedCooldownTracker"],
+			desc = L["Enable or disable MissedCooldownTracker"],
 			order = 1,
 			get = function(info) return db.enabled end,
 			set = function(info, v)
@@ -153,7 +153,7 @@ options = {
                 },
                 tick_frequency = {
                     type = "range",
-                    name = L["CDT Update period"],
+                    name = L["MCDT Update period"],
                     desc = L["Interval at which CooldownTracker checks spell cooldowns."],
                     min = 0.1, max = 5, softMin = 0.5, softMax = 2, 
                     step = 0.25, bigStep = 0.25,
