@@ -20,12 +20,14 @@ local defaults = {
         track_threshold_max = 300,
         tick_frequency = 0.5,
         enable_moving=false,
+        enable_resizing=false,
         -- Below are not in options menu 
         frame_adjustability = "None",
-        coordinate_x = 6.66665506362915,
-        coordinate_y = 802.5, 
-        size_x = 297.5,
-        size_y = 391.67,
+        coordinate_x = 7,
+        coordinate_y = 803, 
+        size_x = 300,
+        size_y = 400,
+        x_size_unit = 42,
         show_frame = true,
         periodic_save = true,
         str_max_disp_len = 17,
@@ -88,87 +90,123 @@ options = {
 				end
 			end,
 			disabled = function() return not db.enabled end,
+            childGroups="tree", -- I wish this did inline :/
 			args = {
 				desc = {
-					name = L["These settings control the execution of CooldownTracker globally."],
+					name = L["These settings control the execution of MissedCooldownTracker globally."],
 					type = "description",
 					order = 0,
 				},
-                display_enabled = {
-                    type = "toggle",
-                    arg = "display_enabled",
-                    name = "Display CDT",
-                    desc = "Whether or not the display for CooldownTracker is shown",
-                    order = 5,
-                    get = function(info) return db.display_enabled end,
-                    set = function(info, v)
-                        db.display_enabled = v
-                        if v then CooldownTracker:ShowFrame(true) else CooldownTracker:ShowFrame(false) end
-                    end,
+                display_settings = {
+                    type = "group",
+                    name = "Display Settings",
+                    desc = "Display settings",
+                    order = 50,
+                    args = {
+                        display_enabled = {
+                            type = "toggle",
+                            arg = "display_enabled",
+                            name = "Display CDT",
+                            desc = "Whether or not the display for MissedCooldownTracker is shown",
+                            order = 50,
+                            get = function(info) return db.display_enabled end,
+                            set = function(info, v)
+                                db.display_enabled = v
+                                if v then CooldownTracker:ShowFrame(true) else CooldownTracker:ShowFrame(false) end
+                            end,
+                        },
+                        enable_moving = {
+                            type = "toggle",
+                            arg = "enable_moving",
+                            name = "Enable Moving",
+                            desc = "Allow the CDT window to be moved.",
+                            order = 55,
+                            get = function(info) return db.enable_moving end,
+                            set = function(info, v)
+                                db.enable_moving = v
+                                if v then CooldownTracker:EnableFrameMove(true) else CooldownTracker:EnableFrameMove(false) end
+                            end,
+                        },
+                        enable_resizing = {
+                            type = "toggle",
+                            arg = "enable_resizing",
+                            name = "Enable Resizing",
+                            desc = "Allow the CDT window to be moved.",
+                            order = 56,
+                            get = function(info) return db.enable_resizing end,
+                            set = function(info, v)
+                                db.enable_resizing = v
+                                if v then CooldownTracker:EnableFrameResize(true) else CooldownTracker:EnableFrameResize(false) end
+                            end,
+                        },
+                        size_x = {
+                            type = "range",
+                            name = "Frame Width",
+                            desc = "The width of the MissedCooldownTracker window.",
+                            min = 100, max = 800, step = 5,
+                            get = function() return db.size_x end,
+                            set = function(_, value)
+                                db.size_x = value
+                                CooldownTracker:UpdateFrameSize()
+                            end,
+                            order = 60
+                        },
+                        size_y = {
+                            type = "range",
+                            name = "Frame Height",
+                            desc = "The height of the MissedCooldownTracker window.",
+                            min = 100, max = 800, step = 5,
+                            get = function() return db.size_y end,
+                            set = function(_, value)
+                                db.size_y = value
+                                CooldownTracker:UpdateFrameSize()
+                            end,
+                            order = 61
+                        },
+                    }
                 },
-                enable_moving = {
-                    type = "toggle",
-                    arg = "enable_moving",
-                    name = "Enable Moving",
-                    desc = "Allow the CDT window to be moved.",
-                    order = 6,
-                    get = function(info) return db.enable_moving end,
-                    set = function(info, v)
-                        db.enable_moving = v
-                        if v then CooldownTracker:EnableFrameMove(true) else CooldownTracker:EnableFrameMove(false) end
-                    end,
-                },
-                learning_mode = {
-                    type = "toggle",
-                    arg = "learning_mode",
-                    name = L["Learning Mode"],
-                    desc = L["Whether CooldownTracker checks for new spell IDs on cooldown."],
-                    order = 8,
-                },
-                -- I don't remember what this is for so I'm gonna keep it hidden.
-                -- periodic_save = {
-                --     type = "toggle",
-                --     arg = "periodic_save",
-                --     name = L["Whether CooldownTracker is learning."],
-                --     desc = L["Whether CooldownTracker checks for new spell IDs on cooldown."],
-                --     order = 5,
-                -- },
-                track_threshold_min = {
-                    type = "range",
-                    name = L["Min CD length tracked"],
-                    desc = L["The minimum cooldown length (in seconds) to track."],
-                    min = 1, max = 900, softMin = 15, softMax = 300,  -- softMin and softMax are what the display shows, even if the text entry allows bigger
-                    step = 1, bigStep = 15,
-                    arg = "track_threshold_min",
-                    order = 20,
-                },
-                track_threshold_max = {
-                    type = "range",
-                    name = L["Max CD length tracked"],
-                    desc = L["The maximum cooldown length (in seconds) to track."],
-                    min = 1, max = 900, softMin = 15, softMax = 300,  -- softMin and softMax are what the display shows, even if the text entry allows bigger
-                    step = 1, bigStep = 15,
-                    arg = "track_threshold_max",
-                    order = 21,
-                },
-                tick_frequency = {
-                    type = "range",
-                    name = L["MCDT Update period"],
-                    desc = L["Interval at which CooldownTracker checks spell cooldowns."],
-                    min = 0.1, max = 5, softMin = 0.5, softMax = 2, 
-                    step = 0.25, bigStep = 0.25,
-                    arg = "tick_frequency",
+                execution_settings = {
+                    type = "group",
+                    name = "Execution Settings",
+                    desc = "Execution settings",
                     order = 10,
+                    args = {
+                        learning_mode = {
+                            type = "toggle",
+                            arg = "learning_mode",
+                            name = L["Learning Mode"],
+                            desc = L["Whether MissedCooldownTracker checks for new spell IDs on cooldown."],
+                            order = 10,
+                        },
+                        track_threshold_min = {
+                            type = "range",
+                            name = L["Min CD length tracked"],
+                            desc = L["The minimum cooldown length (in seconds) to track."],
+                            min = 1, max = 900, softMin = 15, softMax = 300,  -- softMin and softMax are what the display shows, even if the text entry allows bigger
+                            step = 1, bigStep = 15,
+                            arg = "track_threshold_min",
+                            order = 20,
+                        },
+                        track_threshold_max = {
+                            type = "range",
+                            name = L["Max CD length tracked"],
+                            desc = L["The maximum cooldown length (in seconds) to track."],
+                            min = 1, max = 900, softMin = 15, softMax = 300,  -- softMin and softMax are what the display shows, even if the text entry allows bigger
+                            step = 1, bigStep = 15,
+                            arg = "track_threshold_max",
+                            order = 21,
+                        },
+                        tick_frequency = {
+                            type = "range",
+                            name = L["MCDT Update period"],
+                            desc = L["Interval at which MissedCooldownTracker checks spell cooldowns."],
+                            min = 0.1, max = 5, softMin = 0.5, softMax = 2, 
+                            step = 0.25, bigStep = 0.25,
+                            arg = "tick_frequency",
+                            order = 15,
+                        },
+                    },
                 },
-                -- I don't remember what this is for either, so commented out.
-                -- sort_method = {
-                --     type = "select",
-                --     name = L["CooldownTracker display sort method"],
-                --     desc = L["Which method to use for choosing CooldownTracker display order."],
-                --     style = "dropdown",
-                --     values = {cooldown = "cooldown"},
-                --     order = 40,
-                -- },
 			},
 		},
 		spell_list = {
@@ -178,6 +216,11 @@ options = {
 			order = 20,
 			disabled = function() return not db.enabled end,
 			args = {
+                desc = {
+					name = "These settings control which spells are tracked by the MissedCooldownTracker.",
+					type = "description",
+					order = 0,
+				},
 				spell_list={type="group",name="Spell List",args={},order=10},
 				blacklist={type="group",name="Blacklist",args={},order=20},
 			},

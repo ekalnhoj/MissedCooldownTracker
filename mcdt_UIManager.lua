@@ -6,12 +6,19 @@
 
 local CooldownTracker = MissedCooldownTracker
 local cooldownFrame
-local pauseButton -- file-wide local because I change the text on it when paused.
+-- file-wide locals because I change them when paused or resized
+local pauseButton, pauseButtonFrame
+local resetButton, resetButtonFrame
+local reset_button_str = ""
+local pause_button_str = ""
 
 -- rows holds the display table contents.
 local rows = {}
 local n_rows = 0
 local debug_print = true
+local x_size_unit = 0 -- used in the row resizing calcs
+local approx_letter_width_rows = 6
+local approx_letter_width_button = 12
 
 function CooldownTracker:UIManager_OnInitialize()
     debug_print = CooldownTracker.debug_print
@@ -70,11 +77,6 @@ end
 -------------------------------------------------------------------------------
 
 -- Current to do
---   Pause doesn't work (toggle_ticking)
---   Reset spell numbers doesn't work (reset_spell_numbers)
---   And then just generally making the UI better would be good.
-
-
 
 
 -------------------------------------------------------------------------------
@@ -83,11 +85,13 @@ end
 -- ========================================================================= --
 -------------------------------------------------------------------------------
 local function make_table_row(parent,y_offset)
+    local num_x_splits = 6
     y_offset = y_offset or 0
     local y_size = 12
     local y_pad = 2
-    local x_size_unit = 40
     local x_pad = 2
+    local x_size_unit_float = (CooldownTracker.db.profile.size_x - 40 - y_size - 4*y_pad)/num_x_splits
+    x_size_unit = math.floor(x_size_unit_float) -- Typecast to int.
     -- Total width is icon width (y_size) plus spell name width (3x normal size)
     --   plus the cooldown, last-used, and missed casts widths (1x normal size) 
     --   plus padding for each.
@@ -122,15 +126,13 @@ local function make_table_row(parent,y_offset)
     spLU_str:SetJustifyH("RIGHT")
     spMC_str:SetJustifyH("RIGHT")
 
+    -- Make sure this adds up to be equal to num_x_splits * x_size_unit
     spName_str:SetWidth(x_size_unit*3)
     spCD_str:SetWidth(x_size_unit)
     spLU_str:SetWidth(x_size_unit)
     spMC_str:SetWidth(x_size_unit)
 
     local row_container = {row=the_row,icon=the_icon,spName=spName_str,spCD=spCD_str,spLU=spLU_str,spMC=spMC_str}
-    -- print("Row container: ",row_container)
-    -- printTable_keys(row_container)
-    -- print("Row: ",the_row)
     return row_container
 end
 
@@ -257,6 +259,34 @@ function CooldownTracker:EnableFrameMove(do_enable)
     end
 end
 
+function CooldownTracker:EnableFrameResize(do_enable)
+    if do_enable == true then
+        CooldownTracker.resizeHandle = CreateFrame("Button", nil, cooldownFrame)
+        CooldownTracker.resizeHandle:SetSize(16, 16)
+        CooldownTracker.resizeHandle:SetPoint("BOTTOMRIGHT", cooldownFrame, "BOTTOMRIGHT")
+        
+        CooldownTracker.resizeHandle:SetNormalTexture("Interface\\CHATFRAME\\UI-ChatIM-SizeGrabber-Up")
+        CooldownTracker.resizeHandle:SetHighlightTexture("Interface\\CHATFRAME\\UI-ChatIM-SizeGrabber-Highlight")
+        CooldownTracker.resizeHandle:SetPushedTexture("Interface\\CHATFRAME\\UI-ChatIM-SizeGrabber-Down")
+        
+        CooldownTracker.resizeHandle:SetScript("OnMouseDown", function()
+            cooldownFrame:StartSizing("BOTTOMRIGHT")
+        end)
+        
+        CooldownTracker.resizeHandle:SetScript("OnMouseUp", function()
+            cooldownFrame:StopMovingOrSizing()
+            CooldownTracker.db.profile.size_x = cooldownFrame:GetWidth()
+            CooldownTracker.db.profile.size_y = cooldownFrame:GetHeight()
+            CooldownTracker:UpdateFrameSize()
+        end)
+        
+        cooldownFrame:SetResizable(true)
+    else
+        if CooldownTracker.resizeHandle then CooldownTracker.resizeHandle:Hide() end
+    end        
+end
+
+
 -------------------------------------------------------------------------------
 -- ========================================================================= --
 -- Addon-wide GUI Functions
@@ -281,18 +311,49 @@ function CooldownTracker:MakeCooldownFrame()
     -- Show the frame initially
     cooldownFrame:Show()
 
-    -- Add a reset button to the bottom.
+    -- Make the buttons
+    resetButtonFrame = CreateFrame("Frame", "resetButtonFrame", cooldownFrame)
+    resetButton = CreateFrame("Button", "resetButton", resetButtonFrame, "UIPanelButtonTemplate")
+
+    pauseButtonFrame = CreateFrame("Frame", "pauseButtonFrame", cooldownFrame)
+    pauseButton = CreateFrame("Button", "pauseButton", pauseButtonFrame, "UIPanelButtonTemplate")
+
+    CooldownTracker:UpdateButtons()
+end
+
+function CooldownTracker:UpdateButtons()
+    -- Overkill? Yeah, I'm sure. But it works.
+    local button_x_size = math.min(140,math.floor((CooldownTracker.db.profile.size_x - 10) / 2))
+    local reset_button_strs = {{"Reset Spell Numbers",0},{"Reset Numbers",0},{"Reset",0}}
+    local pause_button_strs = {{"Pause Addon",0},{"Pause",0}}
+    for i,entry in ipairs(reset_button_strs) do
+        reset_button_strs[i][2] = string.len(reset_button_strs[i][1]) * approx_letter_width_button
+    end
+    for i,entry in ipairs(pause_button_strs) do
+        pause_button_strs[i][2] = string.len(pause_button_strs[i][1]) * approx_letter_width_button
+    end
+
+    for i,entry in ipairs(reset_button_strs) do
+        if entry[2] < button_x_size then 
+            reset_button_str = entry[1]
+            break
+        end
+    end
+    for i,entry in ipairs(pause_button_strs) do
+        if entry[2] < button_x_size then 
+            pause_button_str = entry[1]
+            break
+        end
+    end    
+
+    -- Update reset button to the bottom.
     if true then -- Just making a code block
-        -- Create a new frame for the button
-        local resetButtonFrame = CreateFrame("Frame", "resetButtonFrame", cooldownFrame)
-        resetButtonFrame:SetSize(150, 30)
+        resetButtonFrame:SetSize(button_x_size+8, 30)
         resetButtonFrame:SetPoint("BOTTOMLEFT", cooldownFrame, "BOTTOMLEFT", 5, 10)
 
-        -- Create the button and add it to the frame
-        local resetButton = CreateFrame("Button", "resetButton", resetButtonFrame, "UIPanelButtonTemplate")
         resetButton:SetPoint("CENTER", resetButtonFrame, "CENTER", 0, 0)
-        resetButton:SetSize(140, 22)
-        resetButton:SetText("Reset Spell Numbers")
+        resetButton:SetSize(button_x_size, 22)
+        resetButton:SetText(reset_button_str)
 
         -- Set the click handler for the button
         resetButton:SetScript("OnClick", function()
@@ -300,18 +361,14 @@ function CooldownTracker:MakeCooldownFrame()
         end)
     end
 
-    -- Add a "pause" button to the bottom as well.
+    -- Update pause button to the bottom as well.
     if true then -- Just making a code block
-        -- Create a new frame for the button
-        local pauseButtonFrame = CreateFrame("Frame", "pauseButtonFrame", cooldownFrame)
-        pauseButtonFrame:SetSize(150, 30)
+        pauseButtonFrame:SetSize(button_x_size+8, 30)
         pauseButtonFrame:SetPoint("BOTTOMRIGHT", cooldownFrame, "BOTTOMRIGHT", -5, 10)
 
-        -- Create the button and add it to the frame
-        pauseButton = CreateFrame("Button", "pauseButton", pauseButtonFrame, "UIPanelButtonTemplate")
         pauseButton:SetPoint("CENTER", pauseButtonFrame, "CENTER", 0, 0)
-        pauseButton:SetSize(140, 22)
-        pauseButton:SetText("Pause Addon")
+        pauseButton:SetSize(button_x_size, 22)
+        pauseButton:SetText(pause_button_str)
 
         -- Set the click handler for the button
         pauseButton:SetScript("OnClick", function()
@@ -320,12 +377,26 @@ function CooldownTracker:MakeCooldownFrame()
     end
 end
 
+function CooldownTracker:UpdateFrameSize()
+
+    if cooldownFrame then
+        cooldownFrame:SetSize(CooldownTracker.db.profile.size_x, CooldownTracker.db.profile.size_y)
+        -- Reposition elements or content inside the frame if necessary
+        CooldownTracker:UpdateButtons()
+        CooldownTracker:RedrawDisplay()
+    end
+end
+
 function CooldownTracker:CooldownFrameStart()
     if debug_print == true then CooldownTracker:Print("UI: CooldownFrameStart") end
     -- Some GUI startup
     CooldownTracker:ShowFrame(true)
-	cooldownFrame:SetSize(CooldownTracker.db.profile.size_x,CooldownTracker.db.profile.size_y)
+    CooldownTracker:UpdateFrameSize()
     cooldownFrame:SetPoint("BOTTOMLEFT", CooldownTracker.db.profile.coordinate_x, CooldownTracker.db.profile.coordinate_y)
+
+    -- If they left it movable, make it movable. 
+    CooldownTracker:EnableFrameMove(CooldownTracker.db.profile.enable_moving)
+    CooldownTracker:EnableFrameResize(CooldownTracker.db.profile.enable_resizing)
 end
 
 function CooldownTracker:ShowFrame(bool_val)
@@ -336,7 +407,7 @@ function CooldownTracker:ShowFrame(bool_val)
 		if debug_print == true then CooldownTracker:Print("Hiding Frame") end
         cooldownFrame:Hide()
     end
-    self.db.profile.display_enabled = bool_val
+    CooldownTracker.db.profile.display_enabled = bool_val
 end
 
 -- Function to update the display text of 'spNameText'
@@ -430,15 +501,17 @@ function CooldownTracker:UpdateTableText()
                     make_orange = true
                 end
 
+                -- CooldownTracker.db.profile.str_max_disp_len = 17
                 local spNameLen = string.len(spellData.spellName)
                 local spNameStr = ""
                 local mcStr = ""
-                if spNameLen > CooldownTracker.db.profile.str_max_disp_len then
-                    local spNameStr_trunc = string.sub(spellData.spellName,1,CooldownTracker.db.profile.str_max_disp_len-3)
-                    spNameStr = string.format("%s...",spNameStr_trunc)
-                else
-                    spNameStr = spellData.spellName
-                end
+                -- if spNameLen > CooldownTracker.db.profile.str_max_disp_len then
+                --     local spNameStr_trunc = string.sub(spellData.spellName,1,CooldownTracker.db.profile.str_max_disp_len-3)
+                --     spNameStr = string.format("%s...",spNameStr_trunc)
+                -- else
+                --     spNameStr = spellData.spellName
+                -- end
+                spNameStr = spellData.spellName
                 if make_red == true then 
                     mcStr = string.format("|cFFFF0000%d|r",mc)
                 elseif make_orange == true then
@@ -454,6 +527,15 @@ function CooldownTracker:UpdateTableText()
                 curr_row.spCD:SetText(string.format("%d",spellData.cooldown))
                 curr_row.spLU:SetText(string.format("%d",sinceLastUsed))
                 curr_row.spMC:SetText(mcStr)
+
+                -- Check that it's not too wide.
+                local spNameLen = curr_row.spName:GetStringWidth()
+                if spNameLen > 3*x_size_unit then
+                    local target_len = 3*x_size_unit / approx_letter_width_rows
+                    local spNameStr_trunc = string.sub(spellData.spellName,1,target_len-3)
+                    spNameStr_trunc = string.format("%s...",spNameStr_trunc)
+                    curr_row.spName:SetText(spNameStr_trunc)
+                end
                 
                 y_offset = y_offset+y_size+y_pad
             end
@@ -531,6 +613,15 @@ function CooldownTracker:UpdateTableText()
                 curr_row.spLU:SetText(string.format("%d",sinceLastUsed))
                 curr_row.spMC:SetText(mcStr)
 
+                -- Check that it's not too wide.
+                local spNameLen = curr_row.spName:GetStringWidth()
+                if spNameLen > 3*x_size_unit then
+                    local target_len = 3*x_size_unit / approx_letter_width_rows
+                    local spNameStr_trunc = string.sub(spellData.spellName,1,target_len-3)
+                    spNameStr_trunc = string.format("%s...",spNameStr_trunc)
+                    curr_row.spName:SetText(spNameStr_trunc)
+                end
+
                 y_offset = y_offset+y_size+y_pad
             end
         end
@@ -605,6 +696,15 @@ function CooldownTracker:UpdateTableText()
                 curr_row.spCD:SetText(string.format("%d",spellData.cooldown))
                 curr_row.spLU:SetText(string.format("%d",sinceLastUsed))
                 curr_row.spMC:SetText(mcStr)
+
+                -- Check that it's not too wide.
+                local spNameLen = curr_row.spName:GetStringWidth()
+                if spNameLen > 3*x_size_unit then
+                    local target_len = 3*x_size_unit / approx_letter_width_rows
+                    local spNameStr_trunc = string.sub(spellData.spellName,1,target_len-3)
+                    spNameStr_trunc = string.format("%s...",spNameStr_trunc)
+                    curr_row.spName:SetText(spNameStr_trunc)
+                end
 
                 y_offset = y_offset+y_size+y_pad
 

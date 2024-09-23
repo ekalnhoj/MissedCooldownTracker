@@ -40,7 +40,7 @@ The WoW options menu for addons should have an entry for this addon. Typing "/cd
 
 
 #### Can I resize the CDT display?
-If you really want this, let me know and I'll implement it. At this point I just want to play TWW so I'm not going to set this up. I think it's a decent size right now.
+Yeah, it's under Display Options. The little "drag tab" is at the bottom right corner.
 
 
 
