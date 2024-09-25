@@ -4,16 +4,19 @@ local debug_print = false
 
 MissedCooldownTracker = LibStub("AceAddon-3.0"):NewAddon("MissedCooldownTracker","AceConsole-3.0","AceEvent-3.0")
 local CooldownTracker = MissedCooldownTracker
+CooldownTracker.enabledState = false -- Prevent auto-enable
 local L = LibStub("AceLocale-3.0"):GetLocale("MissedCooldownTracker", false)
 
 
 -- Our db upvalue and db defaults
 local db
 local options
+local has_been_initialized = false
 
 local defaults = {
 	profile = {
 		enabled = true,
+        paused = false,
         learning_mode = true,
         display_enabled = true,
         track_threshold_min = 30,
@@ -318,12 +321,6 @@ end
 -- ========================================================================= --
 -------------------------------------------------------------------------------
 function CooldownTracker:OnInitialize()
-    if debug_print == true then CooldownTracker:Print("MissedCooldownTracker Initialized!") end
-
-    CooldownTracker.debug_print = debug_print
-    CooldownTracker.paused = false
-    -- CooldownTracker.is_running = function() return not(paused) end
-
     -- Code that you want to run when the addon is first loaded goes here.
     -- Set up our database
 	self.db = LibStub("AceDB-3.0"):New("MissedCooldownTrackerDB", defaults, true)
@@ -333,7 +330,7 @@ function CooldownTracker:OnInitialize()
 	-- self.db.RegisterCallback(self, "OnDatabaseShutdown", "OnDatabaseShutdown")
 	db = self.db.profile
 
-	-- Register options table and slash command
+    -- Register options table and slash command
 	LibStub("AceConfigRegistry-3.0"):RegisterOptionsTable("MissedCooldownTracker", options)
 	self:RegisterChatCommand("missedcooldowntracker", function() LibStub("AceConfigDialog-3.0"):Open("MissedCooldownTracker") end)
     self:RegisterChatCommand("cdt", function() LibStub("AceConfigDialog-3.0"):Open("MissedCooldownTracker") end)
@@ -345,6 +342,23 @@ function CooldownTracker:OnInitialize()
 	options.args.profiles = LibStub("AceDBOptions-3.0"):GetOptionsTable(self.db)
 	options.args.profiles.disabled = options.args.overall_settings.disabled
 
+    -- Register a couple messages
+    CooldownTracker:RegisterMessage("CDT_ENABLE")
+    CooldownTracker:RegisterMessage("CDT_DISABLE")
+
+    if db.enabled == true then
+        CooldownTracker:Initialize()
+        has_been_initialized = true
+    end
+end
+
+function CooldownTracker:Initialize()
+    if debug_print == true then CooldownTracker:Print("MissedCooldownTracker Initialized!") end
+
+    CooldownTracker.debug_print = debug_print
+    CooldownTracker.paused = db.paused
+    -- CooldownTracker.is_running = function() return not(paused) end
+
 	-- Register events (I feel like it makes sense to do this now)
 	-- Update: am registering talent change events after the tables are loaded,
 	--   because when logging in there's a talent change event so it'll do 
@@ -354,8 +368,6 @@ function CooldownTracker:OnInitialize()
 	CooldownTracker:RegisterMessage("CDT_TICK")
 	CooldownTracker:RegisterMessage("CDT_PAUSE")
 	CooldownTracker:RegisterMessage("CDT_UNPAUSE")
-    CooldownTracker:RegisterMessage("CDT_ENABLE")
-    CooldownTracker:RegisterMessage("CDT_DISABLE")
 	CooldownTracker:RegisterMessage("CDT_API_LOADED","OnStartup_Delayed")
 
 	-- Sub-app initialize calls.
@@ -414,6 +426,11 @@ function CooldownTracker:OnEnable()
     -- Called when the addon is enabled
     if debug_print == true then CooldownTracker:Print("CooldownTracker Enabled!") end
 
+    -- In case it starts off disabled.
+    if has_been_initialized == false and db.enabled == true then
+        CooldownTracker:Initialize()
+    end
+
     CooldownTracker:SendMessage("CDT_ENABLE")
 	CooldownTracker:SendMessage("CDT_UNPAUSE")
 end
@@ -451,6 +468,7 @@ end
 function CooldownTracker:CDT_PAUSE()
 	if not(self.paused) then
 		self.paused = true
+        db.paused = true
 	end
 
     -- Semi-submodules
@@ -461,7 +479,14 @@ end
 function CooldownTracker:CDT_UNPAUSE()
 	if self.paused then
 		self.paused = false
-		CooldownTracker:ClockTick()
+        db.paused = false
+
+        if has_been_initialized == 1 then
+            CooldownTracker:ClockTick()
+        else
+            CooldownTracker:WaitForAPI()
+            -- This starts the clock after the delayed startup procedure.
+        end
 	end
 
     -- Semi-submodules
@@ -470,7 +495,7 @@ function CooldownTracker:CDT_UNPAUSE()
 end
 
 function CooldownTracker:CDT_ENABLE()
-	-- Do nothing
+    db.enabled = true
 
     -- Semi-submodules
     CooldownTracker:UIManager_OnEnable()
@@ -478,7 +503,7 @@ function CooldownTracker:CDT_ENABLE()
 end
 
 function CooldownTracker:CDT_DISABLE()
-	-- Do nothing
+	db.enabled = false
 
     -- Semi-submodules
     CooldownTracker:UIManager_OnDisable()

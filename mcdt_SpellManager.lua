@@ -239,6 +239,22 @@ function CooldownTracker:SortTable(method)
     end
 end
 
+function CooldownTracker:CheckIfInTable(table,spellID)
+	if table == nil then 
+		if debug_print == true then CooldownTracker:Print("Issue checking if " .. spellID " is in table.") end
+		return 0 
+	end
+	
+	local is_in_table = 0
+	for i,entry in ipairs(table) do
+		if spellID == entry.spellID then
+			is_in_table = 1
+			break
+		end
+	end
+	return is_in_table
+end
+
 function CooldownTracker:GetAllSpellsWithCDOverThreshold()
 	local saving_spell_list = nil
 	local is_racial = nil
@@ -266,21 +282,8 @@ function CooldownTracker:GetAllSpellsWithCDOverThreshold()
 				--   SpellBookItemInfo stuff
 				local spellType, spellID, isPassive, spellIcon = spellBookItemInfo.itemType, spellBookItemInfo.actionID, spellBookItemInfo.isPassive, spellBookItemInfo.iconID
 	
-				local is_in_blacklist = 0
-				for i,entry in ipairs(blacklist) do
-					if spellID == entry.spellID then
-						is_in_blacklist = 1
-						break
-					end
-				end            
-
-				local is_in_table = 0
-				for i,entry in ipairs(spell_list_all) do
-					if spellID == entry.spellID then
-						is_in_table = 1
-						break
-					end
-				end
+				local is_in_blacklist = CooldownTracker:CheckIfInTable(blacklist,spellID)
+				local is_in_table = CooldownTracker:CheckIfInTable(spell_list_all,spellID)
 
 				if not spellID then 
 					-- If spellID isn't valid then do nothing, else keep running.
